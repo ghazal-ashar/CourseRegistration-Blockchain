@@ -55,16 +55,16 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// Check if user is already logged in
-function checkExistingSession() {
-    // Check localStorage for existing session
-    const storedUser = JSON.parse(localStorage.getItem('user'));
+// // Check if user is already logged in
+// function checkExistingSession() {
+//     // Check localStorage for existing session
+//     const storedUser = JSON.parse(localStorage.getItem('user'));
     
-    if (storedUser) {
-        // Redirect based on role
-        redirectToRole(storedUser.role);
-    }
-}
+//     if (storedUser) {
+//         // Redirect based on role
+//         redirectToRole(storedUser.role);
+//     }
+// }
 
 // Handle login form submission
 function handleLogin(event) {

@@ -22,15 +22,13 @@
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
-                    
                     <li class="nav-item">
-                        <a class="nav-link active" href="student.html">Student Dashboard</a>
+                        <a class="nav-link active" href="studentportal.html">Student Dashboard</a>
                     </li>
-
-                    <button id="logout-btn" class="btn btn-sm btn-light">
-                        <i class="fas fa-sign-out-alt me-1"></i>Logout
-                    </button>
-
+                   
+                    <li class="nav-item">
+                        <a class="nav-link" href="login.html">Logout</a>
+                    </li>
                 </ul>
                 <div class="ms-3 text-light" id="wallet-status">
                     <i class="fas fa-wallet me-1"></i>
@@ -53,6 +51,23 @@
                             </button>
                             <button id="request-tokens-btn" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#requestTokensModal">
                                 <i class="fas fa-coins me-2"></i>Request Tokens
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Shopping Cart Section -->
+                <div id="cart-section" class="card shadow-sm mt-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="fas fa-shopping-cart me-2"></i>Your Cart</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="cart-courses">
+                            <!-- Cart courses will be populated here -->
+                        </div>
+                        <div class="d-grid mt-3">
+                            <button id="proceed-to-checkout-btn" class="btn btn-success" disabled>
+                                <i class="fas fa-check-circle me-1"></i>Proceed to Checkout
                             </button>
                         </div>
                     </div>
@@ -92,12 +107,7 @@
                             Connect your wallet to view your courses and register for new ones.
                         </div>
                         <div id="student-info" class="d-none">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h5>Your Registered Courses</h5>
-                                <button id="pay-all-fees-btn" class="btn btn-warning btn-sm d-none">
-                                    <i class="fas fa-money-bill-wave me-1"></i>Pay All Fees
-                                </button>
-                            </div>
+                            <h5>Your Registered Courses</h5>
                             <div class="table-responsive">
                                 <table class="table table-hover">
                                     <thead>
@@ -106,8 +116,8 @@
                                             <th>Course Name</th>
                                             <th>Credit Hours</th>
                                             <th>Fee (CRST)</th>
+                                            <th>Registration Date</th>
                                             <th>Status</th>
-                                            <th>Action</th>
                                         </tr>
                                     </thead>
                                     <tbody id="registered-courses">
@@ -180,7 +190,7 @@
         </div>
     </div>
 
-    <!-- Payment Modal -->
+    <!-- Individual Course Payment Modal -->
     <div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
@@ -209,12 +219,12 @@
         </div>
     </div>
 
-    <!-- Bulk Payment Modal -->
-    <div class="modal fade" id="bulkPaymentModal" tabindex="-1" aria-hidden="true">
+    <!-- Cart Payment Modal -->
+    <div class="modal fade" id="cartPaymentModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title">Course Fee Payment</h5>
+                    <h5 class="modal-title">Cart Checkout</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
@@ -245,59 +255,18 @@
                             <strong>Your Balance:</strong>
                         </div>
                         <div>
-                            <span id="bulk-payment-balance" class="fs-5">250.00 CRST</span>
+                            <span id="cart-payment-balance" class="fs-5">250.00 CRST</span>
                         </div>
                     </div>
                     
-                    <div class="alert alert-warning" id="bulk-insufficient-funds" style="display: none;">
+                    <div class="alert alert-warning" id="cart-insufficient-funds" style="display: none;">
                         <i class="fas fa-exclamation-triangle me-2"></i>
-                        You don't have enough tokens to pay for these courses. Please request more tokens or select fewer courses.
+                        You don't have enough tokens to pay for these courses. Please request more tokens or remove some courses from your cart.
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="confirm-bulk-payment">Pay Fees</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Payment Confirmation Modal -->
-    <div class="modal fade" id="paymentConfirmationModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-sm">
-            <div class="modal-content">
-                <div class="modal-header bg-warning">
-                    <h5 class="modal-title">Confirm Payment</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body text-center">
-                    <i class="fas fa-question-circle text-warning fs-1 mb-3"></i>
-                    <p>Are you sure you want to pay <strong id="confirmation-amount">0 CRST</strong> for these courses?</p>
-                    <p class="small text-muted">This action cannot be undone.</p>
-                </div>
-                <div class="modal-footer justify-content-center">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-warning" id="final-confirm-payment">Confirm Payment</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Payment Success Modal -->
-    <div class="modal fade" id="paymentSuccessModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-sm">
-            <div class="modal-content">
-                <div class="modal-header bg-success text-white">
-                    <h5 class="modal-title">Payment Successful</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body text-center">
-                    <i class="fas fa-check-circle text-success fs-1 mb-3"></i>
-                    <p>Your payment of <strong id="success-amount">0 CRST</strong> was successful!</p>
-                    <p>All courses have been paid for.</p>
-                </div>
-                <div class="modal-footer justify-content-center">
-                    <button type="button" class="btn btn-success" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="confirm-cart-payment">Complete Purchase</button>
                 </div>
             </div>
         </div>
@@ -309,7 +278,8 @@
                 &copy; 2025 Course Registration System | Blockchain Project
             </p>
             <p class="text-muted small mb-0">
-                Developed by Ghazal E Ashar 
+                Developed by Ghazal E Ashar & Shahzeb Ahmed Iqbal
+
             </p>
         </div>
     </footer>

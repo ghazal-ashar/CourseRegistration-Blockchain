@@ -147,7 +147,7 @@ function verifyAdmin() {
     
     if (!storedUser || storedUser.role !== 'admin') {
         // Not admin, redirect to login
-        window.location.href = '../index.html';
+        window.location.href = 'login.html';
         return;
     }
     
