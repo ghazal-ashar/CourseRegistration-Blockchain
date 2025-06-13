@@ -1,17 +1,14 @@
-// Student Dashboard Script with Cart System
+// Updated Student Dashboard Script - Session Integration
 
 // Global variables
 let courses = [];
-let registeredCourses = []; // Only paid courses
-let cartCourses = []; // Cart courses awaiting payment
+let registeredCourses = [];
+let cartCourses = [];
 let tokenRequests = [];
-let walletConnected = true; // Pre-set to true for demonstration
+let walletBalance = 250.00; // Default balance
+let userSession = null;
 
-// Dummy account data
-const walletAddress = "0x742d35Cc6634C0532925a3b844Bc454e4438f44e";
-let walletBalance = 250.00; // CRST tokens
-
-// Dummy data for available courses
+// Dummy data for available courses (same as before)
 const dummyCourses = [
     {
         id: "101",
@@ -74,7 +71,7 @@ const dummyRegisteredCourses = [
 const dummyTokenRequests = [
     {
         id: "1",
-        student: walletAddress,
+        student: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
         amount: "100000000000000000000", // 100 tokens in wei
         reason: "Need tokens for Smart Contract Development course fee",
         isPending: true,
@@ -83,7 +80,7 @@ const dummyTokenRequests = [
     },
     {
         id: "2",
-        student: walletAddress,
+        student: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
         amount: "50000000000000000000", // 50 tokens in wei
         reason: "For additional course materials",
         isPending: false,
@@ -94,44 +91,120 @@ const dummyTokenRequests = [
 
 // Initialize the student dashboard
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Initializing Student Portal...');
+    
+    // Verify user session
+    if (!verifyStudentSession()) {
+        return; // Will redirect to login
+    }
+    
     // Initialize the dashboard with prefilled data
     initializeDashboard();
     
-    // Event listeners for actions
-    document.getElementById('submit-token-request').addEventListener('click', submitTokenRequest);
-    document.getElementById('proceed-to-checkout-btn').addEventListener('click', showCartPaymentModal);
-    document.getElementById('confirm-cart-payment').addEventListener('click', processCartPayment);
+    // Setup event listeners
+    setupEventListeners();
     
-    // Add event listener for connect wallet button (for real implementation)
-    const connectButton = document.getElementById('connect-wallet');
-    if (connectButton) {
-        connectButton.addEventListener('click', connectWallet);
+    console.log('✅ Student Portal initialized successfully');
+});
+
+// Verify student session using the new session system
+function verifyStudentSession() {
+    try {
+        // Use the session verification from login.js
+        userSession = verifySession();
+        
+        if (!userSession) {
+            return false; // verifySession will handle redirect
+        }
+        
+        console.log('✅ Valid student session found:', userSession.email);
+        
+        // Update UI with session data
+        updateUserUI();
+        
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Session verification failed:', error);
+        window.location.href = 'login.html';
+        return false;
+    }
+}
+
+// Update UI with user session data
+function updateUserUI() {
+    // Update wallet address display in navigation
+    const walletAddressElement = document.getElementById('wallet-address');
+    if (walletAddressElement) {
+        const shortAddress = `${userSession.walletAddress.slice(0, 6)}...${userSession.walletAddress.slice(-4)}`;
+        walletAddressElement.textContent = shortAddress;
+        walletAddressElement.title = userSession.walletAddress; // Full address on hover
     }
     
-    // // Add event listener for view cart button
-    // const viewCartBtn = document.getElementById('view-cart-btn');
-    // if (viewCartBtn) {
-    //     viewCartBtn.addEventListener('click', function() {
-    //         // Update cart badge count
-    //         updateCartBadge();
-            
-    //         // Show/hide cart based on current state
-    //         const cartSection = document.getElementById('cart-section');
-    //         if (cartSection.classList.contains('d-none')) {
-    //             cartSection.classList.remove('d-none');
-    //             this.innerHTML = '<i class="fas fa-shopping-cart me-1"></i>Hide Cart';
-    //         } else {
-    //             cartSection.classList.add('d-none');
-    //             this.innerHTML = '<i class="fas fa-shopping-cart me-1"></i>View Cart <span class="badge bg-danger cart-count">0</span>';
-    //         }
-    //     });
-    // }
-});
+    // Show blockchain integration status
+    if (userSession.usingBlockchain) {
+        console.log('✅ Blockchain integration active');
+    } else {
+        console.log('⚠️ Demo mode - no blockchain integration');
+    }
+    
+    // Update the wallet connection UI to show as connected
+    updateWalletConnectionUI();
+}
+
+function updateWalletConnectionUI() {
+    // Hide connect wallet button and show balance
+    const connectBtn = document.getElementById('connect-wallet');
+    if (connectBtn) {
+        connectBtn.style.display = 'none';
+    }
+    
+    // Show token balance
+    const tokenBalanceElement = document.getElementById('token-balance');
+    if (tokenBalanceElement) {
+        tokenBalanceElement.textContent = `${walletBalance.toFixed(2)} CRST`;
+    }
+    
+    // Hide wallet alert and show course content
+    const walletAlert = document.getElementById('wallet-alert');
+    const studentInfo = document.getElementById('student-info');
+    
+    if (walletAlert) walletAlert.classList.add('d-none');
+    if (studentInfo) studentInfo.classList.remove('d-none');
+}
+
+// Setup event listeners
+function setupEventListeners() {
+    // Token request submission
+    const submitTokenRequestBtn = document.getElementById('submit-token-request');
+    if (submitTokenRequestBtn) {
+        submitTokenRequestBtn.addEventListener('click', submitTokenRequest);
+    }
+    
+    // Cart checkout
+    const proceedToCheckoutBtn = document.getElementById('proceed-to-checkout-btn');
+    if (proceedToCheckoutBtn) {
+        proceedToCheckoutBtn.addEventListener('click', showCartPaymentModal);
+    }
+    
+    // Cart payment confirmation
+    const confirmCartPaymentBtn = document.getElementById('confirm-cart-payment');
+    if (confirmCartPaymentBtn) {
+        confirmCartPaymentBtn.addEventListener('click', processCartPayment);
+    }
+    
+    // Connect wallet button (fallback)
+    const connectButton = document.getElementById('connect-wallet');
+    if (connectButton) {
+        connectButton.addEventListener('click', function() {
+            showMessage('Wallet is already connected via login!', 'info');
+        });
+    }
+}
 
 // Initialize dashboard with prefilled data
 function initializeDashboard() {
-    // Set wallet as connected
-    walletConnected = true;
+    console.log('📊 Loading student dashboard data...');
     
     // Load data
     courses = [...dummyCourses];
@@ -139,94 +212,14 @@ function initializeDashboard() {
     tokenRequests = [...dummyTokenRequests];
     cartCourses = []; // Initialize empty cart
     
-    // Update UI to show connected wallet
-    updateWalletUI();
-    
     // Render all data
     renderAvailableCourses();
     renderRegisteredCourses();
     renderTokenRequests();
     updateCartBadge();
     renderCartCourses();
-}
-document.addEventListener('DOMContentLoaded', function() {
-    initializeDashboard();
-
-    document.getElementById('submit-token-request').addEventListener('click', submitTokenRequest);
-    document.getElementById('proceed-to-checkout-btn').addEventListener('click', showCartPaymentModal);
-    document.getElementById('confirm-cart-payment').addEventListener('click', processCartPayment);
-});
-// Update UI for connected wallet
-function updateWalletUI() {
-    // Hide wallet connection UI
-    const walletNotConnected = document.getElementById('wallet-not-connected');
-    if (walletNotConnected) walletNotConnected.classList.add('d-none');
     
-    // Show wallet connected UI
-    const walletConnectedUI = document.getElementById('wallet-connected');
-    if (walletConnectedUI) walletConnectedUI.classList.remove('d-none');
-    
-    // Update wallet address
-    const walletAddressElement = document.getElementById('wallet-address');
-    if (walletAddressElement) walletAddressElement.textContent = walletAddress;
-    
-    // Update token balance
-    const tokenBalanceElement = document.getElementById('token-balance');
-    if (tokenBalanceElement) tokenBalanceElement.textContent = `${walletBalance.toFixed(2)} CRST`;
-    
-    // Show course content
-    const walletAlert = document.getElementById('wallet-alert');
-    const studentInfo = document.getElementById('student-info');
-    const availableCoursesCard = document.getElementById('available-courses-card');
-    const viewCartBtn = document.getElementById('view-cart-btn');
-    
-    if (walletAlert) walletAlert.classList.add('d-none');
-    if (studentInfo) studentInfo.classList.remove('d-none');
-    if (availableCoursesCard) availableCoursesCard.classList.remove('d-none');
-    if (viewCartBtn) viewCartBtn.classList.remove('d-none');
-}
-
-// Connect wallet function for real implementation
-function connectWallet() {
-    // This function would normally connect to MetaMask
-    
-    /* REAL WALLET CONNECTION CODE:
-    
-    if (typeof window.ethereum !== 'undefined') {
-        // MetaMask is installed
-        window.ethereum.request({ method: 'eth_requestAccounts' })
-            .then(accounts => {
-                if (accounts.length > 0) {
-                    // Store wallet address
-                    walletAddress = accounts[0];
-                    walletConnected = true;
-                    
-                    // Get token balance
-                    const tokenContract = new web3.eth.Contract(tokenABI, tokenAddress);
-                    return tokenContract.methods.balanceOf(walletAddress).call();
-                }
-            })
-            .then(balance => {
-                // Convert balance from wei to ether
-                walletBalance = web3.utils.fromWei(balance, 'ether');
-                
-                // Update UI
-                updateWalletUI();
-                
-                // Load blockchain data
-                loadBlockchainData();
-            })
-            .catch(error => {
-                console.error("Error connecting to wallet:", error);
-                alert("Failed to connect wallet. Please try again.");
-            });
-    } else {
-        alert("MetaMask is not installed. Please install MetaMask to use this application.");
-    }
-    */
-    
-    // For the prefilled demo, just update UI as if wallet is connected
-    updateWalletUI();
+    console.log('✅ Student dashboard loaded successfully');
 }
 
 // Render available courses in the table
@@ -238,7 +231,6 @@ function renderAvailableCourses() {
     tableBody.innerHTML = '';
     
     if (courses.length === 0) {
-        // No courses available
         const row = document.createElement('tr');
         row.innerHTML = `
             <td colspan="7" class="text-center py-3">
@@ -311,7 +303,6 @@ function renderRegisteredCourses() {
     tableBody.innerHTML = '';
     
     if (registeredCourses.length === 0) {
-        // No registrations
         const row = document.createElement('tr');
         row.innerHTML = `
             <td colspan="6" class="text-center py-3">
@@ -358,7 +349,6 @@ function renderCartCourses() {
     cartList.innerHTML = '';
     
     if (cartCourses.length === 0) {
-        // No courses in cart
         cartList.innerHTML = `
              <div class="alert alert-warning">
                  <i class="fas fa-info-circle me-2"></i>Your cart is empty. Browse available courses and add them to your cart.
@@ -434,7 +424,6 @@ function renderTokenRequests() {
     tableBody.innerHTML = '';
     
     if (tokenRequests.length === 0) {
-        // No requests
         const row = document.createElement('tr');
         row.innerHTML = `
             <td colspan="3" class="text-center py-3">
@@ -477,22 +466,21 @@ function renderTokenRequests() {
 
 // Add course to cart
 function addToCart(courseId) {
-    // Find course
     const course = courses.find(c => c.id === courseId);
     if (!course) {
-        alert("Course not found");
+        showMessage("Course not found", 'error');
         return;
     }
     
     // Check if already in cart
     if (cartCourses.some(c => c.id === courseId)) {
-        alert("Course is already in your cart");
+        showMessage("Course is already in your cart", 'warning');
         return;
     }
     
     // Check if already registered
     if (registeredCourses.some(c => c.id === courseId)) {
-        alert("You are already registered for this course");
+        showMessage("You are already registered for this course", 'warning');
         return;
     }
     
@@ -505,12 +493,11 @@ function addToCart(courseId) {
     renderCartCourses();
     
     // Show success message
-    alert(`"${course.name}" has been added to your cart`);
+    showMessage(`"${course.name}" has been added to your cart`, 'success');
 }
 
 // Remove course from cart
 function removeFromCart(courseId) {
-    // Remove from cart
     cartCourses = cartCourses.filter(c => c.id !== courseId);
     
     // Update UI
@@ -530,7 +517,7 @@ function updateCartBadge() {
 // Show cart payment modal
 function showCartPaymentModal() {
     if (cartCourses.length === 0) {
-        alert("Your cart is empty");
+        showMessage("Your cart is empty", 'warning');
         return;
     }
     
@@ -588,63 +575,61 @@ function showCartPaymentModal() {
 // Process cart payment
 function processCartPayment() {
     if (cartCourses.length === 0) {
-        alert("Cart is empty");
+        showMessage("Cart is empty", 'error');
         return;
     }
-    // Fixes to ensure cart payment adds courses to registered section
-
-// Get cart courses and total fee
-let totalFee = 0;
-cartCourses.forEach(course => {
-    totalFee += parseFloat(course.fee) / 1e18;
-});
-
-// Check sufficient balance
-if (walletBalance < totalFee) {
-    alert("Insufficient funds");
-    return;
-}
-
-// Deduct balance
-walletBalance -= totalFee;
-
-// Register each course
-const timestamp = Math.floor(Date.now() / 1000);
-cartCourses.forEach(course => {
-    // Prevent duplicate registration
-    if (!registeredCourses.some(rc => rc.id === course.id)) {
-        registeredCourses.push({
-            ...course,
-            registrationDate: timestamp
-        });
+    
+    // Get cart courses and total fee
+    let totalFee = 0;
+    cartCourses.forEach(course => {
+        totalFee += parseFloat(course.fee) / 1e18;
+    });
+    
+    // Check sufficient balance
+    if (walletBalance < totalFee) {
+        showMessage("Insufficient funds", 'error');
+        return;
     }
-
-    // Update enrolled count
-    const courseIndex = courses.findIndex(c => c.id === course.id);
-    if (courseIndex !== -1) {
-        courses[courseIndex].enrolled = (parseInt(courses[courseIndex].enrolled) + 1).toString();
-    }
-});
-
-// Clear cart
-cartCourses = [];
-
-// Update UI
-renderCartCourses();
-renderAvailableCourses();
-renderRegisteredCourses();
-updateCartBadge();
-
-// Update balance display
-const tokenBalanceElement = document.getElementById('token-balance');
-if (tokenBalanceElement) tokenBalanceElement.textContent = `${walletBalance.toFixed(2)} CRST`;
-
-// Hide modal
-const cartPaymentModal = bootstrap.Modal.getInstance(document.getElementById('cartPaymentModal'));
-if (cartPaymentModal) cartPaymentModal.hide();
-
-alert("Payment successful! You have been registered for all courses.");
-
+    
+    // Deduct balance
+    walletBalance -= totalFee;
+    
+    // Register each course
+    const timestamp = Math.floor(Date.now() / 1000);
+    cartCourses.forEach(course => {
+        // Prevent duplicate registration
+        if (!registeredCourses.some(rc => rc.id === course.id)) {
+            registeredCourses.push({
+                ...course,
+                registrationDate: timestamp
+            });
+        }
+        
+        // Update enrolled count
+        const courseIndex = courses.findIndex(c => c.id === course.id);
+        if (courseIndex !== -1) {
+            courses[courseIndex].enrolled = (parseInt(courses[courseIndex].enrolled) + 1).toString();
+        }
+    });
+    
+    // Clear cart
+    cartCourses = [];
+    
+    // Update UI
+    renderCartCourses();
+    renderAvailableCourses();
+    renderRegisteredCourses();
+    updateCartBadge();
+    
+    // Update balance display
+    const tokenBalanceElement = document.getElementById('token-balance');
+    if (tokenBalanceElement) tokenBalanceElement.textContent = `${walletBalance.toFixed(2)} CRST`;
+    
+    // Hide modal
+    const cartPaymentModal = bootstrap.Modal.getInstance(document.getElementById('cartPaymentModal'));
+    if (cartPaymentModal) cartPaymentModal.hide();
+    
+    showMessage("Payment successful! You have been registered for all courses.", 'success');
 }
 
 // Submit token request
@@ -655,7 +640,17 @@ function submitTokenRequest() {
     
     // Validation
     if (!amount || !reason) {
-        alert("Please fill in all fields");
+        showMessage("Please fill in all fields", 'error');
+        return;
+    }
+    
+    if (parseFloat(amount) <= 0) {
+        showMessage("Token amount must be greater than 0", 'error');
+        return;
+    }
+    
+    if (reason.trim().length < 10) {
+        showMessage("Please provide a more detailed reason (at least 10 characters)", 'error');
         return;
     }
     
@@ -664,7 +659,7 @@ function submitTokenRequest() {
     // For dummy data, add a new token request
     const newRequest = {
         id: (tokenRequests.length + 1).toString(),
-        student: walletAddress,
+        student: userSession.walletAddress,
         amount: (parseFloat(amount) * 1e18).toString(), // Convert to wei
         reason: reason,
         isPending: true,
@@ -685,9 +680,43 @@ function submitTokenRequest() {
     renderTokenRequests();
     
     // Show success message
-    alert("Token request submitted successfully!");
+    showMessage("Token request submitted successfully! An administrator will review your request.", 'success');
 }
 
-window.addEventListener('load', function () {
-    document.getElementById('confirm-cart-payment').addEventListener('click', processCartPayment);
-});
+// Utility functions
+function showMessage(message, type = 'info') {
+    console.log('💬', message);
+    
+    // Create a temporary toast-like notification
+    const alertClass = type === 'error' ? 'alert-danger' : 
+                     type === 'success' ? 'alert-success' : 
+                     type === 'warning' ? 'alert-warning' : 'alert-info';
+    
+    const iconClass = type === 'error' ? 'fa-exclamation-circle' : 
+                     type === 'success' ? 'fa-check-circle' : 
+                     type === 'warning' ? 'fa-exclamation-triangle' : 'fa-info-circle';
+    
+    const toast = document.createElement('div');
+    toast.className = `alert ${alertClass} alert-dismissible fade show position-fixed`;
+    toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    toast.innerHTML = `
+        <i class="fas ${iconClass} me-2"></i>${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(toast);
+    
+    // Auto-remove after 4 seconds
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.parentNode.removeChild(toast);
+        }
+    }, 4000);
+}
+
+// Global functions for compatibility
+window.addToCart = addToCart;
+window.removeFromCart = removeFromCart;
+window.showCartPaymentModal = showCartPaymentModal;
+window.processCartPayment = processCartPayment;
+window.submitTokenRequest = submitTokenRequest;
