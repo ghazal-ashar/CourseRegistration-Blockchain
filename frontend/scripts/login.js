@@ -271,51 +271,11 @@ async function initializeContractsWithEthers() {
     }
 }
 
-async function handleWalletAuthentication(account) {
-    try {
-        let userRole = 'student';
-        
-        // Check if this is the contract owner (hardhat account 0)
-        if (account.toLowerCase() === '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266') {
-            console.log('👑 Contract Owner detected');
-            userRole = 'admin';
-            createSessionAndRedirect(account, userRole, false, true);
-            return;
-        }
-        
-        // Check if user is registered (only if contracts are available)
-        if (courseRegistrationContract) {
-            try {
-                console.log('🔍 Checking user registration...');
-                const profile = await courseRegistrationContract.getUserProfile(account);
-                
-                if (profile[2]) { // isActive
-                    const role = profile[1] === 0 ? 'student' : 'admin';
-                    console.log('👤 Existing user found with role:', role);
-                    createSessionAndRedirect(account, role, false, false);
-                    return;
-                }
-            } catch (profileError) {
-                console.log('📝 New user detected or profile check failed:', profileError.message);
-            }
-        }
-        
-        // New user - show registration options
-        showWalletConnected(account);
-        showRegistrationOptions(account);
-        
-    } catch (error) {
-        console.error('Authentication error:', error);
-        showMessage('Authentication failed: ' + error.message, 'error');
-    }
-}
-
 async function registerAsStudent() {
     if (isProcessing) return;
     isProcessing = true;
     
     try {
-        // Use different variable names to avoid conflicts
         const studentRegisterBtn = document.querySelector('.btn-student-register');
         const adminRequestBtn = document.querySelector('.btn-admin-request');
         
@@ -325,23 +285,47 @@ async function registerAsStudent() {
         showRegistrationMessage('📝 Registering as student...', 'info');
         
         if (courseRegistrationContract) {
-            showRegistrationMessage('⏳ Please confirm the transaction in MetaMask...', 'info');
-            
-            // Call the correct contract function - registerAsStudent() with no parameters
-            const tx = await courseRegistrationContract.registerAsStudent({
-                gasLimit: 300000
-            });
-            
-            console.log('⏳ Transaction sent:', tx.hash);
-            showRegistrationMessage('⏳ Transaction sent! Waiting for confirmation...', 'info');
-            
-            // Wait for transaction to be mined
-            const receipt = await tx.wait();
-            console.log('✅ Student registration successful:', receipt.transactionHash);
-            showRegistrationMessage('✅ Registration successful! Redirecting...', 'success');
-            
-            createSessionAndRedirect(connectedAccount, 'student', true, false);
-            
+            try {
+                // Test the contract connection first
+                console.log('🧪 Testing contract connection...');
+                const owner = await courseRegistrationContract.owner();
+                console.log('✅ Contract owner:', owner);
+                
+                showRegistrationMessage('⏳ Please confirm the transaction in MetaMask...', 'info');
+                
+                // Try the registration transaction - FIXED ethers v5 syntax
+                const tx = await courseRegistrationContract.registerAsStudent({
+                    gasLimit: 300000
+                    // Remove the gasPrice line that was causing the error
+                });
+                
+                console.log('⏳ Transaction sent:', tx.hash);
+                showRegistrationMessage('⏳ Transaction sent! Waiting for confirmation...', 'info');
+                
+                // Wait for transaction to be mined
+                const receipt = await tx.wait();
+                console.log('✅ Student registration successful:', receipt.transactionHash);
+                showRegistrationMessage('✅ Registration successful! Redirecting...', 'success');
+                
+                // Wait a moment for the blockchain to update, then redirect
+                setTimeout(() => {
+                    createSessionAndRedirect(connectedAccount, 'student', true, false);
+                }, 1000);
+                
+            } catch (contractError) {
+                console.error('❌ Contract call failed:', contractError);
+                
+                if (contractError.code === 4001) {
+                    showRegistrationMessage('❌ Transaction cancelled by user', 'error');
+                } else if (contractError.message && contractError.message.includes('User already registered')) {
+                    console.log('✅ User already registered, proceeding...');
+                    showRegistrationMessage('✅ Already registered! Redirecting to student portal...', 'success');
+                    createSessionAndRedirect(connectedAccount, 'student', true, false);
+                    return;
+                } else {
+                    showRegistrationMessage('❌ Registration failed: ' + contractError.message, 'error');
+                }
+            }
         } else {
             // Demo mode
             showRegistrationMessage('ℹ️ Demo mode: Simulating student registration...', 'info');
@@ -353,17 +337,7 @@ async function registerAsStudent() {
         
     } catch (error) {
         console.error('❌ Student registration failed:', error);
-        
-        if (error.code === 4001) {
-            showRegistrationMessage('❌ Transaction cancelled by user', 'error');
-        } else if (error.message && error.message.includes('User already registered')) {
-            console.log('User already registered, proceeding...');
-            showRegistrationMessage('✅ Registration completed! Redirecting...', 'success');
-            createSessionAndRedirect(connectedAccount, 'student', true, false);
-            return;
-        } else {
-            showRegistrationMessage('❌ Registration failed: ' + error.message, 'error');
-        }
+        showRegistrationMessage('❌ Registration failed: ' + error.message, 'error');
         
         // Re-enable buttons on error
         const studentRegisterBtn = document.querySelector('.btn-student-register');
@@ -376,12 +350,92 @@ async function registerAsStudent() {
     }
 }
 
+// Also update the handleWalletAuthentication function to better handle RPC errors:
+async function handleWalletAuthentication(account) {
+    try {
+        let userRole = 'student';
+        
+        // Check if this is the contract owner (hardhat account 0)
+        if (account.toLowerCase() === '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266') {
+            console.log('👑 Contract Owner detected');
+            userRole = 'admin';
+            createSessionAndRedirect(account, userRole, false, true);
+            return;
+        }
+        
+        // Check if user is registered (only if contracts are available and working)
+        if (courseRegistrationContract) {
+            try {
+                console.log('🔍 Checking user registration...');
+                
+                // Test contract connection first
+                await courseRegistrationContract.owner();
+                console.log('✅ Contract connection confirmed');
+                
+                // Try to get user profile
+                if (typeof courseRegistrationContract.getUserProfile === 'function') {
+                    const profile = await courseRegistrationContract.getUserProfile(account);
+                    
+                    console.log('📋 Profile data:', profile);
+                    
+                    // Check if user is active (profile[2] is isActive)
+                    if (profile && profile[2] === true) {
+                        // profile[1] is role: 0 = Student, 1 = Admin
+                        const role = profile[1] === 0 ? 'student' : 'admin';
+                        console.log('👤 Existing user found with role:', role);
+                        console.log('📅 Registered at:', new Date(profile[3] * 1000).toLocaleString());
+                        
+                        showMessage(`Welcome back! Redirecting to ${role} portal...`, 'success');
+                        createSessionAndRedirect(account, role, false, false);
+                        return;
+                    } else {
+                        console.log('📝 User profile exists but not active, or new user');
+                    }
+                } else {
+                    console.warn('⚠️ getUserProfile function not found in contract');
+                }
+                
+            } catch (profileError) {
+                console.log('📝 User profile check failed:', profileError.message);
+                
+                // If it's an RPC error, we'll continue to show registration options
+                // but registration will fall back to demo mode
+                if (profileError.code === -32603 || profileError.message.includes('JSON-RPC')) {
+                    console.log('⚠️ RPC error during profile check - registration will use demo mode');
+                }
+            }
+        }
+        
+        // New user or profile check failed - show registration options
+        showWalletConnected(account);
+        showRegistrationOptions(account);
+        
+    } catch (error) {
+        console.error('Authentication error:', error);
+        showMessage('Authentication failed: ' + error.message, 'error');
+    }
+}
+
+// Add a function to test contract connection
+async function testContractConnection() {
+    if (!courseRegistrationContract) {
+        return false;
+    }
+    
+    try {
+        await courseRegistrationContract.owner();
+        return true;
+    } catch (error) {
+        console.log('Contract connection test failed:', error.message);
+        return false;
+    }
+}
+
 async function requestAdminAccess() {
     if (isProcessing) return;
     isProcessing = true;
     
     try {
-        // Use different variable names to avoid conflicts
         const studentRegBtn = document.querySelector('.btn-student-register');
         const adminReqBtn = document.querySelector('.btn-admin-request');
         
@@ -393,7 +447,6 @@ async function requestAdminAccess() {
         if (courseRegistrationContract) {
             showRegistrationMessage('⏳ Please confirm the transaction in MetaMask...', 'info');
             
-            // Call the correct contract function - requestAdminAccess() with no parameters
             const tx = await courseRegistrationContract.requestAdminAccess({
                 gasLimit: 300000
             });
@@ -404,6 +457,11 @@ async function requestAdminAccess() {
             const receipt = await tx.wait();
             console.log('✅ Admin access request submitted:', receipt.transactionHash);
             showRegistrationMessage('⏳ Admin access requested! An admin will review your request.', 'warning');
+            
+            // Don't auto-redirect for admin requests - they need approval
+            setTimeout(() => {
+                showRegistrationMessage('ℹ️ Your admin request is pending approval. Check back later.', 'info');
+            }, 3000);
             
         } else {
             // Demo mode
