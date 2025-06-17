@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "C:\\Users\\ghaza\\Desktop\\sem 8\\Blockchain and Smart Contract Development\\Course Registration\\contracts\\CourseRegistration.sol": {
-      "lastModificationDate": 1749852713302,
-      "contentHash": "6a31b049511a468a9098522ce2f9e964",
+      "lastModificationDate": 1750103145265,
+      "contentHash": "3e11bb259eba2952712c569161b1080d",
       "sourceName": "contracts/CourseRegistration.sol",
       "solcConfig": {
         "version": "0.8.20",
@@ -40,7 +40,7 @@
       ],
       "artifacts": [
         "CourseRegistration",
-        "ICRSTToken"
+        "ICRSTTokenAutoBurn"
       ]
     },
     "C:\\Users\\ghaza\\Desktop\\sem 8\\Blockchain and Smart Contract Development\\Course Registration\\node_modules\\@openzeppelin\\contracts\\utils\\ReentrancyGuard.sol": {
@@ -345,8 +345,8 @@
       ]
     },
     "C:\\Users\\ghaza\\Desktop\\sem 8\\Blockchain and Smart Contract Development\\Course Registration\\contracts\\CRSTToken.sol": {
-      "lastModificationDate": 1747943989246,
-      "contentHash": "004266760bd709cb0f91b9a7ab2d0587",
+      "lastModificationDate": 1750099149097,
+      "contentHash": "71fe3e42e4d3de603f62f8301a9ef221",
       "sourceName": "contracts/CRSTToken.sol",
       "solcConfig": {
         "version": "0.8.20",

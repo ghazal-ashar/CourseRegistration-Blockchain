@@ -129,6 +129,10 @@ async function connectMetaMask() {
         connectedAccount = await signer.getAddress();
         
         console.log('✅ Connected account:', connectedAccount);
+        // STORE PROVIDER/SIGNER GLOBALLY FOR OTHER PAGES TO REUSE
+        window.provider = provider;
+        window.signer = signer;
+        window.connectedAccount = connectedAccount;
         
         // Step 6: Check network
         const network = await provider.getNetwork();
@@ -241,6 +245,13 @@ async function initializeContractsWithEthers() {
         }
         
         console.log('✅ Contracts initialized successfully with ethers.js');
+
+        // STORE GLOBALLY FOR OTHER PAGES TO REUSE
+        window.provider = provider;
+        window.signer = signer;
+        window.connectedAccount = connectedAccount;
+        window.courseRegistrationContract = courseRegistrationContract;
+        window.crstTokenContract = crstTokenContract;
         
         // Test contract connection with a simple read call instead of getCode
         try {

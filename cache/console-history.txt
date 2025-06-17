@@ -1,0 +1,7 @@
+await ethers.getSigners()
+await deployer.sendTransaction({to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", value: ethers.parseEther("100")});
+await deployer.sendTransaction({to: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", value: ethers.parseEther("100")});
+// Fund your accounts
+// Cconsole.log(await ethers.provider.getBalance(deployer.address));
+const [deployer] = await ethers.getSigners();
+await ethers.getSigners()

@@ -6,30 +6,58 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 
-// Interface to interact with CRST token contract
-interface ICRSTToken {
+// Interface for CRST token with dual auto-burn functionality
+interface ICRSTTokenAutoBurn {
     function mint(address to, uint256 amount) external;
+    function burn(uint256 amount) external;
+    function burnForEthWithdrawal(uint256 ethAmount) external;
     function balanceOf(address account) external view returns (uint256);
+    function totalSupply() external view returns (uint256);
     function transfer(address to, uint256 amount) external returns (bool);
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
     function allowance(address owner, address spender) external view returns (uint256);
+    function approve(address spender, uint256 amount) external returns (bool);
+    function willAutoBurnTrigger() external view returns (bool, uint256);
+    function getRemainingSupply() external view returns (uint256);
 }
 
 /**
- * Course Registration System with Wallet-Only Authentication
- * Handles course registration, payments, and user management using only wallet addresses
+ * Course Registration System with Dual Auto-Burn Token Economics and Cart Functionality
+ * 
+ * AUTO-BURN APPROACH 1: Burns equivalent CRST when ETH is withdrawn
+ * AUTO-BURN APPROACH 2: Burns excess CRST when contract balance exceeds threshold
+ * 
+ * CART FUNCTIONALITY: Students can pay for multiple courses at once
+ * 
+ * Features:
+ * - Wallet-only authentication (no email required)
+ * - Course registration and fee payment system
+ * - Token request system with ETH payment
+ * - Automatic token burning to maintain supply balance
+ * - Shopping cart functionality for multiple course payments
+ * - 25,000 CRST token supply cap with efficient management
+ * 
  * Authors: Ghazal E Ashar & Shahzeb Ahmed Iqbal
  */
 contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
 
-    // Reference to token contract - cannot be changed after deployment
-    ICRSTToken public immutable crstToken;
+    // Reference to auto-burn token contract - cannot be changed after deployment
+    ICRSTTokenAutoBurn public immutable crstToken;
     
-    // Address that receives withdrawn fees
+    // Address that receives withdrawn ETH and fees
     address public beneficiary;
+    
+    // Exchange rate: 1 ETH = 1000 CRST tokens
+    uint256 public constant ETH_TO_CRST_RATE = 1000;
+    
+    // Return fee: 0.5% deduction when students return CRST for ETH
+    uint256 public constant RETURN_FEE_PERCENT = 50; // 0.5% = 50/10000
     
     // Simple role system - either Student or Admin
     enum UserRole { Student, Admin }
+    
+    // Token request status - simplified to 2-step process
+    enum RequestStatus { Pending, Completed, Rejected }
     
     // Stores all information about a course
     struct Course {
@@ -64,16 +92,16 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
         uint256 paidAt;         // When they paid
     }
     
-    // Stores requests for additional tokens
+    // Stores token purchase requests - 2-step process: request → approve/reject
     struct TokenRequest {
         uint256 id;             // Unique request ID
         address student;        // Who requested tokens
-        uint256 amountInTokens; // How many tokens requested (without 18 decimals)
+        uint256 amountInTokens; // How many CRST tokens requested (without 18 decimals)
+        uint256 ethRequired;    // ETH amount required for this request
         string reason;          // Why they need tokens
-        bool isPending;         // Whether request is still pending
-        bool isApproved;        // Whether request was approved (only valid if not pending)
+        RequestStatus status;   // Current status of request
         uint256 timestamp;      // When request was made
-        uint256 processedAt;    // When request was processed
+        uint256 processedAt;    // When request was processed by admin
         address processedBy;    // Who processed the request
     }
     
@@ -104,8 +132,17 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
     // Counter for token requests (starts at 1)
     uint256 public tokenRequestCounter;
     
-    // Total fees collected by the contract
+    // Total fees collected by the contract (in CRST tokens)
     uint256 public totalFeesCollected;
+    
+    // Total ETH collected from token purchases
+    uint256 public totalEthCollected;
+    
+    // Total ETH paid out to students for CRST returns
+    uint256 public totalEthReturned;
+    
+    // Total fees collected from CRST returns (0.5%)
+    uint256 public totalReturnFees;
     
     // Total number of unique students registered
     uint256 public totalStudentsRegistered;
@@ -119,6 +156,7 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
     // Maximum credit hours for any course
     uint8 public constant MAX_CREDIT_HOURS = 6;
     
+    // Events
     // Course management events
     event CourseAdded(uint256 indexed courseId, string name, uint256 feeInTokens, address indexed admin);
     event CourseUpdated(uint256 indexed courseId, string name, uint256 feeInTokens, address indexed admin);
@@ -128,12 +166,14 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
     // Student activity events
     event StudentRegistered(address indexed student, uint256 indexed courseId, uint256 timestamp);
     event FeesPaid(address indexed student, uint256 indexed courseId, uint256 amount, uint256 timestamp);
+    event BatchFeePaid(address indexed student, uint256[] courseIds, uint256 totalAmount, uint256 timestamp);
     
-    // Token request events
-    event TokenRequested(uint256 indexed requestId, address indexed student, uint256 amountInTokens, string reason, uint256 timestamp);
+    // Token request events - 2-step process tracking
+    event TokenRequested(uint256 indexed requestId, address indexed student, uint256 amountInTokens, uint256 ethRequired, string reason, uint256 timestamp);
     event TokenRequestApproved(uint256 indexed requestId, address indexed student, uint256 amountInTokens, address indexed admin);
     event TokenRequestRejected(uint256 indexed requestId, address indexed student, address indexed admin);
-    event TokensMinted(address indexed to, uint256 amount);
+    event TokenPurchaseCompleted(uint256 indexed requestId, address indexed student, uint256 amountInTokens, uint256 ethPaid);
+    event CRSTReturned(address indexed student, uint256 crstAmount, uint256 ethReturned, uint256 feeDeducted);
     
     // User management events
     event UserProfileCreated(address indexed user, UserRole role, uint256 timestamp);
@@ -142,45 +182,13 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
     event AdminRejected(address indexed admin, address indexed rejectedBy);
     event UserDeactivated(address indexed user, address indexed deactivatedBy);
     
-    // Financial events
-    event FeesWithdrawn(address indexed beneficiary, uint256 amount, address indexed withdrawnBy);
+    // Financial events - separate ETH and token withdrawals
+    event EthWithdrawn(address indexed beneficiary, uint256 amount, address indexed withdrawnBy, uint256 tokensBurned);
+    event TokenFeesWithdrawn(address indexed beneficiary, uint256 amount, address indexed withdrawnBy);
     event BeneficiaryUpdated(address indexed oldBeneficiary, address indexed newBeneficiary, address indexed updatedBy);
     
-    // Ensures course ID is valid and course is active
-    modifier validCourseId(uint256 courseId) {
-        require(courseId >= 100 && courseId <= 999 && courses[courseId].isActive, "Invalid/inactive course");
-        _;
-    }
-    
-    // Ensures course exists (regardless of active status)
-    modifier courseExists(uint256 courseId) {
-        require(courseId >= 100 && courseId <= 999 && courses[courseId].id != 0, "Course not found");
-        _;
-    }
-    
-    // Ensures student is not already registered for this course
-    modifier notRegistered(address student, uint256 courseId) {
-        require(registrations[student][courseId].student == address(0), "Already registered");
-        _;
-    }
-    
-    // Ensures student is registered for this course
-    modifier isRegistered(address student, uint256 courseId) {
-        require(registrations[student][courseId].student != address(0), "Not registered");
-        _;
-    }
-    
-    // Ensures student hasn't paid for this course yet
-    modifier hasNotPaid(address student, uint256 courseId) {
-        require(!registrations[student][courseId].hasPaid, "Already paid");
-        _;
-    }
-    
-    // Ensures token request is valid and still pending
-    modifier validTokenRequest(uint256 requestId) {
-        require(requestId > 0 && requestId <= tokenRequestCounter && tokenRequests[requestId].isPending, "Invalid/processed request");
-        _;
-    }
+    // Auto-burn events
+    event AutoBurnTriggered(string reason);
     
     // Ensures user has an active account
     modifier onlyActiveUser() {
@@ -194,16 +202,6 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
             userProfiles[msg.sender].isActive && 
             userProfiles[msg.sender].role == UserRole.Student,
             "Only active students allowed"
-        );
-        _;
-    }
-    
-    // Ensures caller is an active admin
-    modifier onlyAdmin() {
-        require(
-            userProfiles[msg.sender].isActive && 
-            userProfiles[msg.sender].role == UserRole.Admin,
-            "Only active admins allowed"
         );
         _;
     }
@@ -222,11 +220,11 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
     constructor(address _tokenAddress, address initialOwner, address _beneficiary) Ownable(initialOwner) {
         require(_tokenAddress != address(0), "Invalid token address");
         require(_beneficiary != address(0), "Invalid beneficiary");
-        crstToken = ICRSTToken(_tokenAddress);
+        crstToken = ICRSTTokenAutoBurn(_tokenAddress);
         beneficiary = _beneficiary;
     }
     
-    // Register as a student - wallet address only
+    // Register as a student - wallet address only, no automatic allowances
     function registerAsStudent() external {
         require(!userProfiles[msg.sender].isActive, "User already registered");
         require(!pendingAdmins[msg.sender], "Admin request pending");
@@ -250,7 +248,6 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
         
         // Mark as pending admin
         pendingAdmins[msg.sender] = true;
-        
         emit AdminRequested(msg.sender);
     }
     
@@ -281,25 +278,10 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
         
         // Clean up pending status
         pendingAdmins[adminAddress] = false;
-        
         emit AdminRejected(adminAddress, msg.sender);
     }
     
-    // Check if user is registered and active
-    function isUserActive(address user) external view returns (bool) {
-        return userProfiles[user].isActive;
-    }
-    
-    // Deactivate a user account (only owner or admins)
-    function deactivateUser(address userAddress) external onlyOwnerOrAdmin {
-        require(userProfiles[userAddress].isActive, "User already inactive");
-        require(userAddress != owner(), "Cannot deactivate contract owner");
-        
-        userProfiles[userAddress].isActive = false;
-        emit UserDeactivated(userAddress, msg.sender);
-    }
-    
-    // Create a new course (only owner or admins)
+    // Add course
     function addCourse(
         string calldata name, 
         string calldata description, 
@@ -315,7 +297,6 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
         
         uint256 courseId = nextCourseId++;
         
-        // Create the course
         courses[courseId] = Course({
             id: courseId,
             name: name,
@@ -332,23 +313,25 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
         courseIds.push(courseId);
         emit CourseAdded(courseId, name, feeInTokens, msg.sender);
     }
-    
-    // Update course details (only owner or admins)
+
     function updateCourse(
-        uint256 courseId, 
+        uint256 courseId,
         string calldata name, 
         string calldata description, 
         uint8 creditHours, 
         uint256 feeInTokens, 
         uint16 capacity
-    ) external onlyOwnerOrAdmin courseExists(courseId) {
+    ) external onlyOwnerOrAdmin whenNotPaused {
+        require(courseId >= 100 && courseId <= 999 && courses[courseId].id != 0, "Course not found");
         require(bytes(name).length > 0, "Course name required");
         require(creditHours > 0 && creditHours <= MAX_CREDIT_HOURS, "Invalid credit hours");
         require(feeInTokens > 0 && feeInTokens <= MAX_COURSE_FEE, "Invalid fee");
         require(capacity > 0 && capacity <= MAX_COURSE_CAPACITY, "Invalid capacity");
         
         Course storage course = courses[courseId];
-        require(capacity >= course.enrolled, "Capacity cannot be less than enrolled students");
+        
+        // Cannot reduce capacity below current enrollment
+        require(capacity >= course.enrolled, "Cannot reduce capacity below enrolled students");
         
         // Update course details
         course.name = name;
@@ -359,31 +342,89 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
         
         emit CourseUpdated(courseId, name, feeInTokens, msg.sender);
     }
-    
-    // Deactivate a course (only owner or admins)
-    function deactivateCourse(uint256 courseId) external onlyOwnerOrAdmin courseExists(courseId) {
+
+    /**
+    * Deactivate a course (stop new registrations)
+    * @param courseId The ID of the course to deactivate
+    */
+    function deactivateCourse(uint256 courseId) external onlyOwnerOrAdmin whenNotPaused {
+        require(courseId >= 100 && courseId <= 999 && courses[courseId].id != 0, "Course not found");
+        require(courses[courseId].isActive, "Course already inactive");
+        
         courses[courseId].isActive = false;
         emit CourseDeactivated(courseId, msg.sender);
     }
-    
-    // Reactivate a course (only owner or admins)
-    function activateCourse(uint256 courseId) external onlyOwnerOrAdmin courseExists(courseId) {
+
+    /**
+    * Activate a course (allow new registrations)
+    * @param courseId The ID of the course to activate
+    */
+    function activateCourse(uint256 courseId) external onlyOwnerOrAdmin whenNotPaused {
+        require(courseId >= 100 && courseId <= 999 && courses[courseId].id != 0, "Course not found");
+        require(!courses[courseId].isActive, "Course already active");
+        
         courses[courseId].isActive = true;
         emit CourseActivated(courseId, msg.sender);
     }
+
+    /**
+    * Get detailed course information including financial metrics
+    * @param courseId The ID of the course
+    * @return course The course struct
+    * @return revenue Total revenue generated (in wei)
+    * @return enrollmentRate Enrollment rate percentage (0-100)
+    */
+    function getCourseDetails(uint256 courseId) external view returns (
+        Course memory course,
+        uint256 revenue,
+        uint256 enrollmentRate
+    ) {
+        require(courseId >= 100 && courseId <= 999 && courses[courseId].id != 0, "Course not found");
+        
+        course = courses[courseId];
+        revenue = course.feeInTokens * course.enrolled * 10**18; // Convert to wei
+        enrollmentRate = course.capacity > 0 ? (course.enrolled * 100) / course.capacity : 0;
+        
+        return (course, revenue, enrollmentRate);
+    }
+
+    /**
+    * Check if a student is registered for a course
+    * @param student Student address
+    * @param courseId Course ID
+    * @return isRegistered Whether student is registered
+    * @return hasPaid Whether student has paid fees
+    */
+    function isStudentRegistered(address student, uint256 courseId) external view returns (
+        bool isRegistered, 
+        bool hasPaid
+    ) {
+        Registration memory registration = registrations[student][courseId];
+        isRegistered = (registration.student != address(0));
+        hasPaid = registration.hasPaid;
+        
+        return (isRegistered, hasPaid);
+    }
+
+    /**
+    * Get registration details for a student and course
+    * @param student Student address
+    * @param courseId Course ID
+    * @return registration The registration struct
+    */
+    function getRegistration(address student, uint256 courseId) external view returns (Registration memory registration) {
+        require(courses[courseId].id != 0, "Course not found");
+        return registrations[student][courseId];
+    }
     
-    // Register for a course (students only)
-    function registerForCourse(uint256 courseId) 
-        external 
-        whenNotPaused 
-        onlyStudent 
-        validCourseId(courseId) 
-        notRegistered(msg.sender, courseId) 
-    {
+    // Register for course
+    function registerForCourse(uint256 courseId) external whenNotPaused onlyStudent {
+        require(courseId >= 100 && courseId <= 999 && courses[courseId].isActive, "Invalid/inactive course");
+        require(registrations[msg.sender][courseId].student == address(0), "Already registered");
+        
         Course storage course = courses[courseId];
         require(course.enrolled < course.capacity, "Course is full");
         
-        // Create registration record
         registrations[msg.sender][courseId] = Registration({
             student: msg.sender,
             courseId: courseId,
@@ -393,11 +434,9 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
             paidAt: 0
         });
         
-        // Add to student's course list
         studentCourses[msg.sender].push(courseId);
         course.enrolled++;
         
-        // Track unique students
         if (studentCourses[msg.sender].length == 1) {
             totalStudentsRegistered++;
         }
@@ -405,300 +444,263 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
         emit StudentRegistered(msg.sender, courseId, block.timestamp);
     }
     
-    // Pay course fee (students only)
-    function payFee(uint256 courseId) 
-        external 
-        nonReentrant 
-        whenNotPaused 
-        onlyStudent 
-        courseExists(courseId) 
-        isRegistered(msg.sender, courseId) 
-        hasNotPaid(msg.sender, courseId) 
-    {
+    // Pay course fee - student must have approved contract first
+    function payFee(uint256 courseId) external nonReentrant whenNotPaused onlyStudent {
+        require(registrations[msg.sender][courseId].student != address(0), "Not registered");
+        require(!registrations[msg.sender][courseId].hasPaid, "Already paid");
+        
         Course memory course = courses[courseId];
         Registration storage registration = registrations[msg.sender][courseId];
         
-        // Calculate required fee (convert to wei)
         uint256 requiredFee = course.feeInTokens * 10**18;
         
-        // Check balance and allowance
-        require(crstToken.balanceOf(msg.sender) >= requiredFee, "Insufficient token balance");
-        require(crstToken.allowance(msg.sender, address(this)) >= requiredFee, "Insufficient token allowance");
+        // Check student has enough CRST tokens
+        require(crstToken.balanceOf(msg.sender) >= requiredFee, "Insufficient CRST balance");
         
-        // Transfer tokens from student to contract
+        // Check student has approved contract to spend their CRST
+        // Student must call: crstToken.approve(courseRegistrationAddress, courseFee) first
+        require(crstToken.allowance(msg.sender, address(this)) >= requiredFee, "Please approve contract to spend your CRST tokens first");
+        
+        // Contract pulls CRST from student to contract
         require(crstToken.transferFrom(msg.sender, address(this), requiredFee), "Token transfer failed");
         
-        // Update registration record
         registration.hasPaid = true;
         registration.paidAmount = requiredFee;
         registration.paidAt = block.timestamp;
         
-        // Update contract totals
         totalFeesCollected += requiredFee;
+        
+        // Auto-burn excess tokens happens automatically when tokens are transferred to contract
+        emit AutoBurnTriggered("Fee payment - auto-burn check triggered");
         
         emit FeesPaid(msg.sender, courseId, requiredFee, block.timestamp);
     }
     
-    // Request additional tokens (students only)
+    // Pay fees for multiple courses at once (CART FUNCTIONALITY)
+    function payFeesForCourses(uint256[] calldata courseIds) external nonReentrant whenNotPaused onlyStudent {
+        require(courseIds.length > 0, "No courses provided");
+        require(courseIds.length <= 10, "Maximum 10 courses per transaction");
+        
+        uint256 totalFeeRequired = 0;
+        
+        // First pass: validate all courses and calculate total fee
+        for (uint256 i = 0; i < courseIds.length; i++) {
+            uint256 courseId = courseIds[i];
+            
+            // Validate course registration and payment status
+            require(registrations[msg.sender][courseId].student != address(0), "Not registered for all courses");
+            require(!registrations[msg.sender][courseId].hasPaid, "Already paid for some courses");
+            
+            // Add to total fee
+            Course memory course = courses[courseId];
+            totalFeeRequired += course.feeInTokens * 10**18;
+        }
+        
+        // Check student has enough CRST tokens for all courses
+        require(crstToken.balanceOf(msg.sender) >= totalFeeRequired, "Insufficient CRST balance for all courses");
+        
+        // Check student has approved contract to spend total amount
+        require(crstToken.allowance(msg.sender, address(this)) >= totalFeeRequired, "Please approve contract to spend enough CRST tokens for all courses");
+        
+        // Transfer total amount once
+        require(crstToken.transferFrom(msg.sender, address(this), totalFeeRequired), "Batch token transfer failed");
+        
+        // Second pass: update all registrations
+        for (uint256 i = 0; i < courseIds.length; i++) {
+            uint256 courseId = courseIds[i];
+            Course memory course = courses[courseId];
+            Registration storage registration = registrations[msg.sender][courseId];
+            
+            uint256 courseFee = course.feeInTokens * 10**18;
+            
+            registration.hasPaid = true;
+            registration.paidAmount = courseFee;
+            registration.paidAt = block.timestamp;
+            
+            emit FeesPaid(msg.sender, courseId, courseFee, block.timestamp);
+        }
+        
+        totalFeesCollected += totalFeeRequired;
+        
+        // Auto-burn excess tokens happens automatically when tokens are transferred to contract
+        emit AutoBurnTriggered("Batch fee payment - auto-burn check triggered");
+        emit BatchFeePaid(msg.sender, courseIds, totalFeeRequired, block.timestamp);
+    }
+    
+    // Step 1: Student requests tokens - pays ETH upfront now
     function requestTokens(uint256 amountInTokens, string calldata reason) 
         external 
+        payable
         whenNotPaused 
         onlyStudent 
     {
-        require(amountInTokens > 0 && amountInTokens <= 10000, "Invalid token amount");
+        require(amountInTokens > 0 && amountInTokens <= 10000, "Invalid token amount (1-10000)");
         require(bytes(reason).length > 0 && bytes(reason).length <= 500, "Invalid reason");
+        
+        // Calculate required ETH
+        uint256 ethRequired = (amountInTokens * 10**18) / ETH_TO_CRST_RATE;
+        require(msg.value >= ethRequired, "Insufficient ETH sent");
         
         tokenRequestCounter++;
         
-        // Create token request
+        // Create token request with ETH already paid
         tokenRequests[tokenRequestCounter] = TokenRequest({
             id: tokenRequestCounter,
             student: msg.sender,
             amountInTokens: amountInTokens,
+            ethRequired: ethRequired,
             reason: reason,
-            isPending: true,
-            isApproved: false,
+            status: RequestStatus.Pending,
             timestamp: block.timestamp,
             processedAt: 0,
             processedBy: address(0)
         });
         
-        emit TokenRequested(tokenRequestCounter, msg.sender, amountInTokens, reason, block.timestamp);
-    }
-    
-    // Mint tokens directly to admin's wallet (only owner or admins)
-    function mintTokensToSelf(uint256 amountInTokens) external onlyOwnerOrAdmin {
-        require(amountInTokens > 0, "Amount must be greater than 0");
-        require(amountInTokens <= 100000, "Cannot mint more than 100,000 tokens at once");
+        // Update ETH collected
+        totalEthCollected += ethRequired;
         
-        uint256 amountInWei = amountInTokens * 10**18;
-        
-        // Mint tokens directly to the admin's wallet
-        crstToken.mint(msg.sender, amountInWei);
-        
-        emit TokensMinted(msg.sender, amountInWei);
-    }
-    
-    // Transfer tokens from admin to student (only owner or admins)
-    function transferTokensToStudent(address student, uint256 amountInTokens) external onlyOwnerOrAdmin {
-        require(student != address(0), "Invalid student address");
-        require(amountInTokens > 0, "Amount must be greater than 0");
-        require(userProfiles[student].isActive && userProfiles[student].role == UserRole.Student, "Student must be registered and active");
-        
-        uint256 amountInWei = amountInTokens * 10**18;
-        
-        // Check admin has enough balance
-        require(crstToken.balanceOf(msg.sender) >= amountInWei, "Insufficient admin token balance");
-        
-        // Transfer tokens from admin to student
-        require(crstToken.transferFrom(msg.sender, student, amountInWei), "Token transfer failed");
-        
-        emit TokensMinted(student, amountInWei); // Using same event for consistency
-    }
-    
-    // Approve token request with choice of mint or transfer (only owner or admins)
-    function approveTokenRequest(uint256 requestId, bool mintNew) 
-        external 
-        onlyOwnerOrAdmin 
-        validTokenRequest(requestId) 
-    {
-        TokenRequest storage request = tokenRequests[requestId];
-        uint256 amountInWei = request.amountInTokens * 10**18;
-        
-        // Verify student is still active
-        require(userProfiles[request.student].isActive && userProfiles[request.student].role == UserRole.Student, "Student must be active");
-        
-        // Update request status
-        request.isPending = false;
-        request.isApproved = true;
-        request.processedAt = block.timestamp;
-        request.processedBy = msg.sender;
-        
-        if (mintNew) {
-            // Mint new tokens to student
-            crstToken.mint(request.student, amountInWei);
-        } else {
-            // Transfer from admin's wallet
-            require(crstToken.balanceOf(msg.sender) >= amountInWei, "Insufficient admin token balance");
-            require(crstToken.transferFrom(msg.sender, request.student, amountInWei), "Token transfer failed");
+        // Refund excess ETH if any
+        if (msg.value > ethRequired) {
+            payable(msg.sender).transfer(msg.value - ethRequired);
         }
         
-        emit TokensMinted(request.student, amountInWei);
-        emit TokenRequestApproved(requestId, request.student, request.amountInTokens, msg.sender);
+        emit TokenRequested(tokenRequestCounter, msg.sender, amountInTokens, ethRequired, reason, block.timestamp);
     }
     
-    // Simple approve token request (always mints new tokens)
-    function approveTokenRequestMint(uint256 requestId) 
-        external 
-        onlyOwnerOrAdmin 
-        validTokenRequest(requestId) 
-    {
+    // Step 2: Admin approves request and tokens are transferred immediately
+    function approveTokenRequest(uint256 requestId) external onlyOwnerOrAdmin {
+        require(requestId > 0 && requestId <= tokenRequestCounter, "Invalid request ID");
         TokenRequest storage request = tokenRequests[requestId];
-        uint256 amountInWei = request.amountInTokens * 10**18;
-        
-        // Verify student is still active
+        require(request.status == RequestStatus.Pending, "Request not pending");
         require(userProfiles[request.student].isActive && userProfiles[request.student].role == UserRole.Student, "Student must be active");
         
+        uint256 amountInWei = request.amountInTokens * 10**18;
+        uint256 contractBalance = crstToken.balanceOf(address(this));
+        
+        // Mint tokens if needed
+        if (contractBalance < amountInWei) {
+            uint256 remainingSupply = crstToken.getRemainingSupply();
+            uint256 neededTokens = amountInWei - contractBalance;
+            require(neededTokens <= remainingSupply, "Not enough tokens available");
+            
+            crstToken.mint(address(this), neededTokens);
+        }
+        
+        // Transfer tokens immediately to student
+        require(crstToken.transfer(request.student, amountInWei), "Token transfer failed");
+        
         // Update request status
-        request.isPending = false;
-        request.isApproved = true;
+        request.status = RequestStatus.Completed;
         request.processedAt = block.timestamp;
         request.processedBy = msg.sender;
         
-        // Mint tokens to student
-        crstToken.mint(request.student, amountInWei);
-        
-        emit TokensMinted(request.student, amountInWei);
         emit TokenRequestApproved(requestId, request.student, request.amountInTokens, msg.sender);
+        emit TokenPurchaseCompleted(requestId, request.student, request.amountInTokens, request.ethRequired);
     }
     
-    // Reject a token request (only owner or admins)
-    function rejectTokenRequest(uint256 requestId) 
-        external 
-        onlyOwnerOrAdmin 
-        validTokenRequest(requestId) 
-    {
+    // Reject token request and refund ETH
+    function rejectTokenRequest(uint256 requestId) external onlyOwnerOrAdmin {
+        require(requestId > 0 && requestId <= tokenRequestCounter, "Invalid request ID");
         TokenRequest storage request = tokenRequests[requestId];
+        require(request.status == RequestStatus.Pending, "Request not pending");
         
         // Update request status
-        request.isPending = false;
-        request.isApproved = false;
+        request.status = RequestStatus.Rejected;
         request.processedAt = block.timestamp;
         request.processedBy = msg.sender;
+        
+        // Refund ETH to student
+        totalEthCollected -= request.ethRequired;
+        payable(request.student).transfer(request.ethRequired);
         
         emit TokenRequestRejected(requestId, request.student, msg.sender);
     }
     
-    // Get course details
-    function getCourse(uint256 courseId) external view returns (Course memory) {
-        require(courses[courseId].id != 0, "Course not found");
-        return courses[courseId];
+    // NEW: Students can return CRST tokens for ETH (with 0.5% fee)
+    function returnCRSTForETH(uint256 crstAmount) external nonReentrant whenNotPaused onlyStudent {
+        require(crstAmount > 0, "Amount must be greater than 0");
+        require(crstToken.balanceOf(msg.sender) >= crstAmount, "Insufficient CRST balance");
+        
+        // Calculate ETH equivalent
+        uint256 ethEquivalent = crstAmount / ETH_TO_CRST_RATE;
+        require(ethEquivalent > 0, "CRST amount too small");
+        
+        // Calculate 0.5% fee
+        uint256 feeAmount = (ethEquivalent * RETURN_FEE_PERCENT) / 10000;
+        uint256 ethToReturn = ethEquivalent - feeAmount;
+        
+        // Check contract has enough ETH
+        require(address(this).balance >= ethToReturn, "Insufficient contract ETH balance");
+        
+        // Check student has approved contract to take their CRST
+        require(crstToken.allowance(msg.sender, address(this)) >= crstAmount, "Please approve contract to spend your CRST tokens");
+        
+        // Transfer CRST from student to contract
+        require(crstToken.transferFrom(msg.sender, address(this), crstAmount), "CRST transfer failed");
+        
+        // Transfer ETH to student (minus fee)
+        payable(msg.sender).transfer(ethToReturn);
+        
+        // Update tracking
+        totalEthReturned += ethToReturn;
+        totalReturnFees += feeAmount;
+        
+        // Auto-burn excess CRST happens automatically when tokens are transferred to contract
+        emit CRSTReturned(msg.sender, crstAmount, ethToReturn, feeAmount);
+        emit AutoBurnTriggered("CRST return - auto-burn check triggered");
     }
     
-    // Get all course IDs
-    function getAllCourseIds() external view returns (uint256[] memory) {
-        return courseIds;
+    // AUTO-BURN APPROACH 1: Withdraw ETH and burn equivalent CRST tokens
+    function withdrawEth(uint256 amountInWei) external onlyOwner {
+        require(amountInWei > 0, "Amount must be greater than zero");
+        require(beneficiary != address(0), "No beneficiary set");
+        require(amountInWei <= address(this).balance, "Insufficient contract ETH balance");
+        
+        // AUTO-BURN APPROACH 1: Burn equivalent CRST tokens when withdrawing ETH
+        crstToken.burnForEthWithdrawal(amountInWei);
+        uint256 tokensBurned = amountInWei * ETH_TO_CRST_RATE;
+        
+        payable(beneficiary).transfer(amountInWei);
+        
+        emit EthWithdrawn(beneficiary, amountInWei, msg.sender, tokensBurned);
+        emit AutoBurnTriggered("ETH withdrawal - burned equivalent CRST");
     }
     
-    // Get only active course IDs
-    function getActiveCourseIds() external view returns (uint256[] memory) {
-        uint256 activeCount = 0;
-        uint256 length = courseIds.length;
+    // AUTO-BURN APPROACH 1: Withdraw all ETH and burn equivalent CRST tokens
+    function withdrawAllEth() external onlyOwner {
+        uint256 contractBalance = address(this).balance;
+        require(contractBalance > 0, "No ETH to withdraw");
+        require(beneficiary != address(0), "No beneficiary set");
         
-        for (uint256 i = 0; i < length; i++) {
-            if (courses[courseIds[i]].isActive) {
-                activeCount++;
-            }
-        }
+        // AUTO-BURN APPROACH 1: Burn equivalent CRST tokens
+        crstToken.burnForEthWithdrawal(contractBalance);
+        uint256 tokensBurned = contractBalance * ETH_TO_CRST_RATE;
         
-        uint256[] memory activeCourses = new uint256[](activeCount);
-        uint256 index = 0;
+        payable(beneficiary).transfer(contractBalance);
         
-        for (uint256 i = 0; i < length; i++) {
-            if (courses[courseIds[i]].isActive) {
-                activeCourses[index] = courseIds[i];
-                index++;
-            }
-        }
-        
-        return activeCourses;
+        emit EthWithdrawn(beneficiary, contractBalance, msg.sender, tokensBurned);
+        emit AutoBurnTriggered("All ETH withdrawal - burned equivalent CRST");
     }
     
-    // Get courses a student is registered for
-    function getStudentCourses(address student) external view returns (uint256[] memory) {
-        return studentCourses[student];
-    }
-    
-    // Get registration details
-    function getRegistration(address student, uint256 courseId) external view returns (Registration memory) {
-        require(registrations[student][courseId].student != address(0), "Registration not found");
-        return registrations[student][courseId];
-    }
-    
-    // Get token request details
-    function getTokenRequest(uint256 requestId) external view returns (TokenRequest memory) {
-        require(requestId > 0 && requestId <= tokenRequestCounter, "Invalid request ID");
-        return tokenRequests[requestId];
-    }
-    
-    // Get user profile by address - simplified without email
-    function getUserProfile(address user) external view returns (
-        address walletAddress,
-        UserRole role,
-        bool isActive,
-        uint256 registeredAt
-    ) {
-        UserProfile memory profile = userProfiles[user];
-        return (profile.walletAddress, profile.role, profile.isActive, profile.registeredAt);
-    }
-    
-    // Get pending token requests (for admin review)
-    function getPendingTokenRequests() external view returns (TokenRequest[] memory) {
-        uint256 pendingCount = 0;
-        for (uint256 i = 1; i <= tokenRequestCounter; i++) {
-            if (tokenRequests[i].isPending) {
-                pendingCount++;
-            }
-        }
+    // Withdraw token fees to beneficiary
+    function withdrawTokenFees(uint256 amountInTokens) external onlyOwner {
+        require(amountInTokens > 0, "Amount must be greater than zero");
+        require(beneficiary != address(0), "No beneficiary set");
         
-        TokenRequest[] memory pendingRequests = new TokenRequest[](pendingCount);
-        uint256 index = 0;
+        uint256 amountInWei = amountInTokens * 10**18;
+        uint256 contractBalance = crstToken.balanceOf(address(this));
+        require(amountInWei <= contractBalance, "Insufficient contract token balance");
         
-        for (uint256 i = 1; i <= tokenRequestCounter; i++) {
-            if (tokenRequests[i].isPending) {
-                pendingRequests[index] = tokenRequests[i];
-                index++;
-            }
-        }
+        require(crstToken.transfer(beneficiary, amountInWei), "Token transfer failed");
         
-        return pendingRequests;
+        // Auto-burn happens automatically when contract balance changes
+        emit TokenFeesWithdrawn(beneficiary, amountInWei, msg.sender);
+        emit AutoBurnTriggered("Token fee withdrawal - auto-burn check triggered");
     }
     
-    // Get system statistics
-    function getSystemStats() external view returns (
-        uint256 totalCourses,
-        uint256 activeCourses,
-        uint256 totalStudents,
-        uint256 totalRegistrations,
-        uint256 totalFeesCollectedAmount,
-        uint256 totalTokenRequests,
-        uint256 pendingTokenRequests
-    ) {
-        uint256 activeCount = 0;
-        uint256 registrationCount = 0;
-        uint256 pendingCount = 0;
-        
-        uint256 courseLength = courseIds.length;
-        for (uint256 i = 0; i < courseLength; i++) {
-            if (courses[courseIds[i]].isActive) {
-                activeCount++;
-            }
-            registrationCount += courses[courseIds[i]].enrolled;
-        }
-        
-        for (uint256 i = 1; i <= tokenRequestCounter; i++) {
-            if (tokenRequests[i].isPending) {
-                pendingCount++;
-            }
-        }
-        
-        return (
-            courseLength,
-            activeCount,
-            totalStudentsRegistered,
-            registrationCount,
-            totalFeesCollected,
-            tokenRequestCounter,
-            pendingCount
-        );
-    }
+    // Remove manual trigger function since auto-burn is automatic
     
-    // Get contract's token balance
-    function getContractBalance() external view returns (uint256) {
-        return crstToken.balanceOf(address(this));
-    }
-    
-    // Set new beneficiary address (only owner)
+    // Set beneficiary
     function setBeneficiary(address _beneficiary) external onlyOwner {
         require(_beneficiary != address(0), "Invalid beneficiary address");
         require(_beneficiary != beneficiary, "Same beneficiary");
@@ -709,44 +711,205 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
         emit BeneficiaryUpdated(oldBeneficiary, _beneficiary, msg.sender);
     }
     
-    // Withdraw specific amount of fees to beneficiary (only owner)
-    function withdrawFees(uint256 amountInTokens) external onlyOwner {
-        require(amountInTokens > 0, "Amount must be greater than zero");
-        require(beneficiary != address(0), "No beneficiary set");
-        
-        uint256 amountInWei = amountInTokens * 10**18;
-        uint256 contractBalance = crstToken.balanceOf(address(this));
-        require(amountInWei <= contractBalance, "Insufficient contract balance");
-        
-        require(crstToken.transfer(beneficiary, amountInWei), "Token transfer failed");
-        
-        emit FeesWithdrawn(beneficiary, amountInWei, msg.sender);
+    // View functions
+    function getCourse(uint256 courseId) external view returns (Course memory) {
+        require(courses[courseId].id != 0, "Course not found");
+        return courses[courseId];
     }
     
-    // Withdraw all fees to beneficiary (only owner)
-    function withdrawAllFees() external onlyOwner {
-        uint256 contractBalance = crstToken.balanceOf(address(this));
-        require(contractBalance > 0, "No fees to withdraw");
-        require(beneficiary != address(0), "No beneficiary set");
-        
-        require(crstToken.transfer(beneficiary, contractBalance), "Token transfer failed");
-        
-        emit FeesWithdrawn(beneficiary, contractBalance, msg.sender);
+    function getAllCourseIds() external view returns (uint256[] memory) {
+        return courseIds;
     }
     
-    // Pause the contract (only owner)
+    function getStudentCourses(address student) external view returns (uint256[] memory) {
+        return studentCourses[student];
+    }
+    
+    function getTokenRequest(uint256 requestId) external view returns (TokenRequest memory) {
+        require(requestId > 0 && requestId <= tokenRequestCounter, "Invalid request ID");
+        return tokenRequests[requestId];
+    }
+    
+    function getPendingTokenRequests() external view returns (TokenRequest[] memory) {
+        uint256 pendingCount = 0;
+        for (uint256 i = 1; i <= tokenRequestCounter; i++) {
+            if (tokenRequests[i].status == RequestStatus.Pending) {
+                pendingCount++;
+            }
+        }
+        
+        TokenRequest[] memory pendingRequests = new TokenRequest[](pendingCount);
+        uint256 index = 0;
+        
+        for (uint256 i = 1; i <= tokenRequestCounter; i++) {
+            if (tokenRequests[i].status == RequestStatus.Pending) {
+                pendingRequests[index] = tokenRequests[i];
+                index++;
+            }
+        }
+        
+        return pendingRequests;
+    }
+    
+    // Get approved token requests waiting for finalization (REMOVED - no longer needed)
+    // This function is no longer needed since tokens are transferred immediately on approval
+    
+    // Get system statistics including supply info
+    function getSystemStats() external view returns (
+        uint256 totalCourses,
+        uint256 totalStudents,
+        uint256 totalFeesCollectedAmount,
+        uint256 totalEthCollectedAmount,
+        uint256 totalEthReturnedAmount,
+        uint256 totalReturnFeesAmount,
+        uint256 totalTokenRequests,
+        uint256 currentSupply,
+        uint256 contractTokenBalance,
+        bool willAutoBurn,
+        uint256 autoBurnAmount
+    ) {
+        (willAutoBurn, autoBurnAmount) = crstToken.willAutoBurnTrigger();
+        
+        return (
+            courseIds.length,
+            totalStudentsRegistered,
+            totalFeesCollected,
+            totalEthCollected,
+            totalEthReturned,
+            totalReturnFees,
+            tokenRequestCounter,
+            crstToken.totalSupply(),
+            crstToken.balanceOf(address(this)),
+            willAutoBurn,
+            autoBurnAmount
+        );
+    }
+    
+    function getContractTokenBalance() external view returns (uint256) {
+        return crstToken.balanceOf(address(this));
+    }
+    
+    function getContractEthBalance() external view returns (uint256) {
+        return address(this).balance;
+    }
+    
+    function getRequiredEthForTokens(uint256 amountInTokens) external pure returns (uint256) {
+        return (amountInTokens * 10**18) / ETH_TO_CRST_RATE;
+    }
+    
+    // Helper function to calculate total fees for multiple courses (CART HELPER)
+    function calculateTotalFeesForCourses(uint256[] calldata courseIds) external view returns (uint256 totalFee, bool allValid, string memory errorMessage) {
+        if (courseIds.length == 0) {
+            return (0, false, "No courses provided");
+        }
+        
+        if (courseIds.length > 10) {
+            return (0, false, "Maximum 10 courses per transaction");
+        }
+        
+        totalFee = 0;
+        
+        for (uint256 i = 0; i < courseIds.length; i++) {
+            uint256 courseId = courseIds[i];
+            
+            // Check if course exists
+            if (courses[courseId].id == 0) {
+                return (0, false, "One or more courses do not exist");
+            }
+            
+            // Check if course is active
+            if (!courses[courseId].isActive) {
+                return (0, false, "One or more courses are inactive");
+            }
+            
+            totalFee += courses[courseId].feeInTokens * 10**18;
+        }
+        
+        return (totalFee, true, "");
+    }
+    
+    // Helper function to check if student can pay for courses (CART VALIDATION)
+    function canStudentPayForCourses(address student, uint256[] calldata courseIds) external view returns (bool canPay, string memory reason, uint256 totalRequired, uint256 studentBalance, uint256 studentAllowance) {
+        // Check if student is active
+        if (!userProfiles[student].isActive || userProfiles[student].role != UserRole.Student) {
+            return (false, "Student not active", 0, 0, 0);
+        }
+        
+        // Calculate total required and validate registrations
+        (uint256 totalFee, bool allValid, string memory errorMsg) = this.calculateTotalFeesForCourses(courseIds);
+        
+        if (!allValid) {
+            return (false, errorMsg, 0, 0, 0);
+        }
+        
+        // Check registrations and payment status
+        for (uint256 i = 0; i < courseIds.length; i++) {
+            uint256 courseId = courseIds[i];
+            
+            if (registrations[student][courseId].student == address(0)) {
+                return (false, "Not registered for all courses", totalFee, 0, 0);
+            }
+            
+            if (registrations[student][courseId].hasPaid) {
+                return (false, "Already paid for some courses", totalFee, 0, 0);
+            }
+        }
+        
+        // Check balances
+        studentBalance = crstToken.balanceOf(student);
+        studentAllowance = crstToken.allowance(student, address(this));
+        
+        if (studentBalance < totalFee) {
+            return (false, "Insufficient CRST balance", totalFee, studentBalance, studentAllowance);
+        }
+        
+        if (studentAllowance < totalFee) {
+            return (false, "Insufficient allowance - please approve more CRST", totalFee, studentBalance, studentAllowance);
+        }
+        
+        return (true, "Ready to pay", totalFee, studentBalance, studentAllowance);
+    }
+    
+    // Get student's unpaid registered courses (for cart display)
+    function getStudentUnpaidCourses(address student) external view returns (uint256[] memory unpaidCourseIds, uint256[] memory fees) {
+        uint256[] memory studentCourseIds = studentCourses[student];
+        uint256 unpaidCount = 0;
+        
+        // Count unpaid courses
+        for (uint256 i = 0; i < studentCourseIds.length; i++) {
+            uint256 courseId = studentCourseIds[i];
+            if (!registrations[student][courseId].hasPaid) {
+                unpaidCount++;
+            }
+        }
+        
+        // Create arrays for unpaid courses
+        unpaidCourseIds = new uint256[](unpaidCount);
+        fees = new uint256[](unpaidCount);
+        uint256 index = 0;
+        
+        for (uint256 i = 0; i < studentCourseIds.length; i++) {
+            uint256 courseId = studentCourseIds[i];
+            if (!registrations[student][courseId].hasPaid) {
+                unpaidCourseIds[index] = courseId;
+                fees[index] = courses[courseId].feeInTokens;
+                index++;
+            }
+        }
+        
+        return (unpaidCourseIds, fees);
+    }
+    
+    // Emergency pause
     function pause() external onlyOwner {
         _pause();
     }
     
-    // Unpause the contract (only owner)
     function unpause() external onlyOwner {
         _unpause();
     }
     
-    // Fallback function to receive ETH
-    fallback() external payable {}
-    
-    // Receive function to accept ETH transfers
+    // Receive ETH
     receive() external payable {}
+    fallback() external payable {}
 }

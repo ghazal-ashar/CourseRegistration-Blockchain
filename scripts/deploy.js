@@ -16,9 +16,6 @@ async function main() {
             value: 0,
             gasLimit: 21000
         });
-        if (i % 5 === 0) {
-            console.log(`Generated ${i + 1} blocks...`);
-        }
     }
     
     const currentBlock = await ethers.provider.getBlockNumber();
@@ -47,59 +44,23 @@ async function main() {
     // Transfer CRSTToken ownership to CourseRegistration contract
     const transferTx = await crstToken.transferOwnership(registrationAddress);
     await transferTx.wait();
-    
+
     console.log("CRSTToken ownership transferred to CourseRegistration contract!");
-    
-    // Test the system
-    console.log("\n🧪 Testing system...");
-    
-    try {
-        // Register deployer as student
-        const registerTx = await courseRegistration.registerAsStudent();
-        await registerTx.wait();
-        console.log("✅ Student registration successful!");
-        
-        // Add sample courses
-        console.log("Adding sample courses...");
-        
-        await courseRegistration.addCourse(
-            "Introduction to Blockchain",
-            "Learn the fundamentals of blockchain technology and its applications.",
-            3,
-            ethers.parseEther("100"),
-            30
-        );
-        
-        await courseRegistration.addCourse(
-            "Smart Contract Development", 
-            "An in-depth course on developing secure smart contracts with Solidity.",
-            4,
-            ethers.parseEther("150"),
-            25
-        );
-        
-        await courseRegistration.addCourse(
-            "Decentralized Applications",
-            "Build DApps using Web3.js, React, and Ethereum.",
-            3,
-            ethers.parseEther("125"),
-            20
-        );
-        
-        console.log("✅ Sample courses added!");
-        
-        // Mint tokens to admin
-        const mintTx = await courseRegistration.mintTokensToSelf(ethers.parseEther("10000"));
-        await mintTx.wait();
-        console.log("✅ Tokens minted to admin successfully!");
-        
-        // Check balance
-        const balance = await crstToken.balanceOf(deployer.address);
-        console.log("✅ Admin CRST balance:", ethers.formatEther(balance), "CRST");
-        
-    } catch (error) {
-        console.log("⚠️ Testing error:", error.message);
-    }
+
+    //Transfer initial tokens to CourseRegistration contract
+    console.log("Transferring initial token supply to CourseRegistration contract...");
+    const initialBalance = await crstToken.balanceOf(deployer.address);
+    const transferTokensTx = await crstToken.transfer(registrationAddress, initialBalance);
+    await transferTokensTx.wait();
+
+    console.log(`✅ Transferred ${ethers.formatEther(initialBalance)} CRST tokens to CourseRegistration contract!`);
+
+    // Verify the transfer
+    const contractBalance = await crstToken.balanceOf(registrationAddress);
+    const deployerBalance = await crstToken.balanceOf(deployer.address);
+    console.log(`Contract CRST balance: ${ethers.formatEther(contractBalance)} CRST`);
+    console.log(`Deployer CRST balance: ${ethers.formatEther(deployerBalance)} CRST`);
+
     
     // Generate more blocks after deployment
     console.log("\n🔧 Generating post-deployment blocks...");
@@ -160,12 +121,6 @@ async function main() {
     
     console.log("\n🎉 Deployment complete!");
     console.log(`📊 Final blockchain state: ${finalBlock} blocks`);
-    console.log("\n📋 Next Steps:");
-    console.log("1. Clear MetaMask activity data (Settings → Advanced → Clear activity tab data)");
-    console.log("2. Import this account to MetaMask:");
-    console.log("   Private Key: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
-    console.log("3. Refresh your browser");
-    console.log("\n✅ The blockchain now has enough blocks to prevent sync issues!");
     
     return {
         crstToken: tokenAddress,
