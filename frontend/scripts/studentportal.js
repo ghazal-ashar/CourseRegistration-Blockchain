@@ -1,5 +1,5 @@
 /*
- * Enhanced Student Portal with Circuit Breaker Handling - blockchain-based course registration system.
+ * Enhanced Student Portal with Real-time Event Monitoring
  * Authors: Ghazal E Ashar & Shahzeb Ahmed Iqbal
  */
 
@@ -9,15 +9,14 @@
 let userSession = null;              // Stores user session data from login.js
 let isInitialized = false;           // Prevents multiple initializations
 
-// Blockchain connection objects
-let provider = null;                 // Ethers.js provider for blockchain connection
-let signer = null;                   // Signer for sending transactions
-let courseRegistrationContract = null; // Main contract instance
-let crstTokenContract = null;        // Token contract instance
+// Blockchain connection objects - USE GLOBALS FROM LOGIN.JS
+// These are declared in login.js and available globally
+// let provider, signer, courseRegistrationContract, crstTokenContract are already global
 
 // UI state management
 let currentPaymentCourseId = null;   // ID of currently selected course for payment
 let refreshInterval = null;          // Timer for periodic data refresh
+let eventFilter = null;              // Event filter for blockchain monitoring
 
 // Data containers - these hold all the information displayed on the dashboard
 let courses = [];                    // Array of all available courses
@@ -27,8 +26,7 @@ let tokenRequests = [];             // Array of student's token requests
 
 // Balance information for display
 let balances = {
-    crst: '0.00',                   // Student's CRST balance
-    eth: '0.000'                    // Student's ETH balance
+    crst: '0.00'                    // Student's CRST balance
 };
 
 // Contract constants (loaded dynamically from contracts)
@@ -93,7 +91,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     document.body.dataset.studentInit = 'true';
     
-    console.log('🚀 Initializing Enhanced Student Portal v2.3...');
+    console.log('🚀 Initializing Student Portal v2.0...');
     
     // Check for redirect loops
     const redirectCount = parseInt(sessionStorage.getItem('studentRedirectCount') || '0');
@@ -122,16 +120,13 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeContracts().then(() => {
         initializeDashboard();      // Load all dashboard data
         setupEventListeners();      // Set up button clicks and modal events
+        setupEventMonitoring();     // Setup real-time event monitoring
         startPeriodicRefresh();     // Start auto-refresh timer
         isInitialized = true;
-        console.log('✅ Student Portal v2.3 initialized successfully');
+        console.log('✅ Student Portal v2.0 initialized successfully');
     }).catch(error => {
         console.error('❌ Failed to initialize student portal:', error);
-        showMessage('Failed to connect to blockchain. Using demo mode.', 'warning');
-        // Fall back to demo mode
-        initializeDemoMode();
-        setupEventListeners();
-        isInitialized = true;
+        showMessage('Failed to connect to blockchain. Please check your connection and refresh.', 'error');
     });
 });
 
@@ -143,6 +138,7 @@ function verifyStudentSession() {
     try {
         console.log('🔍 Checking student session...');
         
+        // Get stored session from localStorage/sessionStorage
         const storedUser = getStoredSession();
         if (!storedUser) {
             console.log('❌ No session found');
@@ -153,6 +149,7 @@ function verifyStudentSession() {
             return false;
         }
         
+        // Parse session JSON
         try {
             userSession = JSON.parse(storedUser);
         } catch (e) {
@@ -176,13 +173,14 @@ function verifyStudentSession() {
         
         // Check if user has student role (redirecting admins to admin portal)
         if (userSession.role === 'admin') {
-            console.log('🔄 Admin detected, redirecting to admin portal');
+            console.log('👨‍💼 Admin detected, redirecting to admin portal');
             setTimeout(() => {
                 window.location.href = 'adminportal.html';
             }, 1500);
             return false;
         }
         
+        // Verify this is actually a student
         if (userSession.role !== 'student') {
             console.log('❌ User is not a student. Role:', userSession.role);
             showMessage('Access denied. Student role required.', 'error');
@@ -249,17 +247,14 @@ async function initializeContracts() {
     }
     
     try {
-        // FIRST: Try to reuse existing connection from login.js
+        // FIRST: Try to reuse existing connection from login.js (like adminportal.js)
         if (typeof window.provider !== 'undefined' && window.provider) {
             console.log('🔄 Reusing existing blockchain connection from login...');
-            provider = window.provider;
-            signer = window.signer;
+            // Use global variables directly (no assignment needed)
             
             // Try to reuse contracts if they exist
             if (window.courseRegistrationContract && window.crstTokenContract) {
                 console.log('📦 Reusing existing contract instances...');
-                courseRegistrationContract = window.courseRegistrationContract;
-                crstTokenContract = window.crstTokenContract;
                 
                 // Test the existing contracts with circuit breaker handling
                 try {
@@ -269,6 +264,7 @@ async function initializeContracts() {
                         return { owner, symbol };
                     });
                     console.log('✅ Reused contracts working with circuit breaker protection');
+                    updateBlockchainStatus('✅ Blockchain Connected (Reused)');
                     await loadContractConstants();
                     await verifyStudentRegistration();
                     return;
@@ -278,7 +274,7 @@ async function initializeContracts() {
             }
         }
         
-        // SECOND: Connect to MetaMask if no existing connection
+        // SECOND: Connect to MetaMask if no existing connection (like adminportal.js)
         if (typeof window.ethereum !== 'undefined') {
             console.log('🔌 Creating new blockchain connection...');
             provider = new ethers.providers.Web3Provider(window.ethereum);
@@ -355,11 +351,12 @@ async function initializeContracts() {
             }
             
             console.log('✅ Contracts initialized successfully with circuit breaker protection');
+            updateBlockchainStatus('✅ Blockchain Connected');
             
             // Load contract constants dynamically
             await loadContractConstants();
             
-            // Verify student registration on the blockchain
+            // Verify student registration on blockchain
             await verifyStudentRegistration();
             
         } else {
@@ -368,23 +365,31 @@ async function initializeContracts() {
     } catch (error) {
         console.error('❌ Contract initialization failed:', error);
         
+        let statusMessage = '❌ Connection Failed';
         let userMessage = 'Blockchain connection failed.';
         
-        // Provide specific error messages for common issues
+        // Provide specific error messages for common issues (like adminportal.js)
         if (error.message.includes('MetaMask is temporarily overloaded')) {
+            statusMessage = '❌ MetaMask Overloaded';
             userMessage = 'MetaMask is temporarily overloaded. Please wait a moment and try refreshing the page.';
         } else if (error.message.includes('circuit breaker')) {
+            statusMessage = '❌ Rate Limited';
             userMessage = 'MetaMask rate limit hit. Please wait a moment and try again.';
         } else if (error.message.includes('invalid block tag')) {
+            statusMessage = '❌ Blockchain Out of Sync';
             userMessage = 'Your local blockchain is out of sync. Please restart your blockchain and redeploy contracts.';
         } else if (error.message.includes('not deployed')) {
+            statusMessage = '❌ Contracts Not Deployed';
             userMessage = 'Smart contracts not found. Please deploy contracts to your local blockchain.';
         } else if (error.message.includes('wrong address')) {
+            statusMessage = '❌ Wrong Contract Address';
             userMessage = 'Contract addresses in config.js are incorrect. Please update after redeploying.';
         } else if (error.message.includes('JSON-RPC')) {
+            statusMessage = '❌ RPC Connection Failed';
             userMessage = 'Cannot connect to blockchain. Make sure your local blockchain is running on http://127.0.0.1:8545';
         }
         
+        updateBlockchainStatus(statusMessage);
         showMessage(userMessage, 'error');
         throw error;
     }
@@ -408,6 +413,7 @@ async function loadContractConstants() {
                     return { exchangeRate, maxCourseFee, returnFeePercent };
                 });
                 
+                // Store contract constants for use throughout the app
                 contractConstants = {
                     exchangeRate: constants.exchangeRate.toString(),
                     maxCourseFee: constants.maxCourseFee.toString(),
@@ -490,90 +496,284 @@ async function verifyStudentRegistration() {
     }
 }
 
+// 6. REAL-TIME EVENT MONITORING
+
 /**
- * Initialize demo mode when blockchain is not available
- * This provides a functional experience without blockchain connectivity
+ * Setup real-time event monitoring for blockchain events
+ * This listens for contract events and updates the UI automatically
  */
-function initializeDemoMode() {
-    console.log('📺 Initializing demo mode...');
+function setupEventMonitoring() {
+    if (!courseRegistrationContract) {
+        console.log('Contract not available for event monitoring');
+        return;
+    }
     
-    // Set demo data
-    courses = [
-        {
-            id: "101",
-            name: "Introduction to Blockchain",
-            description: "Learn the fundamentals of blockchain technology and its applications.",
-            creditHours: "3",
-            feeInTokens: "100",
-            capacity: "30",
-            enrolled: "12",
-            isActive: true
-        },
-        {
-            id: "102",
-            name: "Smart Contract Development",
-            description: "An in-depth course on developing secure smart contracts with Solidity.",
-            creditHours: "4",
-            feeInTokens: "150",
-            capacity: "25",
-            enrolled: "20",
-            isActive: true
-        },
-        {
-            id: "103",
-            name: "Decentralized Applications",
-            description: "Build DApps using Web3.js, React, and Ethereum.",
-            creditHours: "3",
-            feeInTokens: "125",
-            capacity: "20",
-            enrolled: "15",
-            isActive: true
+    try {        
+        // Listen to all events from the course registration contract
+        courseRegistrationContract.on("*", (event) => {
+            handleBlockchainEvent(event);
+        });
+        
+        // Also listen to token events
+        if (crstTokenContract) {
+            crstTokenContract.on("*", (event) => {
+                handleTokenEvent(event);
+            });
         }
-    ];
-    
-    registeredCourses = [
-        {
-            id: "101",
-            name: "Introduction to Blockchain",
-            creditHours: "3",
-            feeInTokens: "100",
-            registrationDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
-            hasPaid: true
-        }
-    ];
-    
-    tokenRequests = [
-        {
-            id: "1",
-            amountInTokens: "100",
-            reason: "Need tokens for course fees",
-            status: 0, // Pending
-            timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000) // Yesterday
-        }
-    ];
-    
-    balances = {
-        crst: '250.00',
-        eth: '1.500'
-    };
-    
-    cartCourses = [];
-    
-    // Update UI to show demo mode
-    showMessage('Running in demo mode - blockchain features simulated', 'info');
-    
-    initializeDashboard();
-    console.log('✅ Demo mode initialized');
+        
+        console.log('Event monitoring setup complete');
+        
+    } catch (error) {
+        console.error('Failed to setup event monitoring:', error);
+    }
 }
 
-// 6. DATA LOADING FUNCTIONS
+/**
+ * Handle blockchain events from course registration contract
+ */
+function handleBlockchainEvent(event) {
+    try {
+        const eventName = event.event;
+        const args = event.args;
+        
+        console.log('Blockchain event received:', eventName, args);
+        
+        // Only handle events that are specifically related to the current student
+        const currentUserAddress = userSession.walletAddress.toLowerCase();
+        
+        switch (eventName) {
+            case 'StudentRegistered':
+                // Only show if this event is for the current user
+                if (args.student.toLowerCase() === currentUserAddress) {
+                    addEventToUI('Registration', `Successfully registered for course ${args.courseId}`, 'success');
+                    // Refresh registered courses data
+                    loadRegisteredCourses().then(() => renderRegisteredCourses());
+                    loadCourses().then(() => renderCourses()); // Update available courses to show registration status
+                }
+                break;
+                
+            case 'FeesPaid':
+                // Only show if this event is for the current user
+                if (args.student.toLowerCase() === currentUserAddress) {
+                    const amount = parseFloat(ethers.utils.formatEther(args.amount)).toFixed(2);
+                    addEventToUI('Payment', `Fee paid for course ${args.courseId}: ${amount} CRST`, 'success');
+                    // Refresh balances and courses
+                    loadBalances().then(() => updateBalanceDisplays());
+                    loadRegisteredCourses().then(() => renderRegisteredCourses());
+                }
+                break;
+                
+            case 'BatchFeePaid':
+                // Only show if this event is for the current user
+                if (args.student.toLowerCase() === currentUserAddress) {
+                    const totalAmount = parseFloat(ethers.utils.formatEther(args.totalAmount)).toFixed(2);
+                    addEventToUI('Payment', `Batch payment completed: ${args.courseIds.length} courses, ${totalAmount} CRST total`, 'success');
+                    // Refresh balances and courses
+                    loadBalances().then(() => updateBalanceDisplays());
+                    loadRegisteredCourses().then(() => renderRegisteredCourses());
+                    loadCourses().then(() => renderCourses());
+                }
+                break;
+                
+            case 'TokenRequested':
+                // Only show if this event is for the current user
+                if (args.student.toLowerCase() === currentUserAddress) {
+                    const ethRequired = parseFloat(ethers.utils.formatEther(args.ethRequired)).toFixed(4);
+                    addEventToUI('Token Request', `Requested ${args.amountInTokens} CRST tokens (${ethRequired} ETH paid)`, 'info');
+                    // Refresh token requests
+                    loadTokenRequests().then(() => renderTokenRequests());
+                }
+                break;
+                
+            case 'TokenRequestApproved':
+                // Only show if this event is for the current user
+                if (args.student.toLowerCase() === currentUserAddress) {
+                    addEventToUI('Token Request', `Token request approved: ${args.amountInTokens} CRST tokens`, 'success');
+                    // Refresh balances and token requests
+                    loadBalances().then(() => updateBalanceDisplays());
+                    loadTokenRequests().then(() => renderTokenRequests());
+                }
+                break;
+                
+            case 'TokenRequestRejected':
+                // Only show if this event is for the current user
+                if (args.student.toLowerCase() === currentUserAddress) {
+                    addEventToUI('Token Request', `Token request rejected - ETH refunded`, 'error');
+                    // Refresh token requests
+                    loadTokenRequests().then(() => renderTokenRequests());
+                }
+                break;
+                
+            case 'TokenPurchaseCompleted':
+                // Only show if this event is for the current user
+                if (args.student.toLowerCase() === currentUserAddress) {
+                    const ethPaid = parseFloat(ethers.utils.formatEther(args.ethPaid)).toFixed(4);
+                    addEventToUI('Token Purchase', `Received ${args.amountInTokens} CRST tokens (${ethPaid} ETH)`, 'success');
+                    // Refresh balances
+                    loadBalances().then(() => updateBalanceDisplays());
+                }
+                break;
+                
+            case 'CRSTReturned':
+                // Only show if this event is for the current user
+                if (args.student.toLowerCase() === currentUserAddress) {
+                    const crstAmount = parseFloat(ethers.utils.formatEther(args.crstAmount)).toFixed(2);
+                    const ethReturned = parseFloat(ethers.utils.formatEther(args.ethReturned)).toFixed(4);
+                    const feeDeducted = parseFloat(ethers.utils.formatEther(args.feeDeducted)).toFixed(4);
+                    addEventToUI('CRST Return', `Returned ${crstAmount} CRST for ${ethReturned} ETH (${feeDeducted} ETH fee)`, 'info');
+                    // Refresh balances
+                    loadBalances().then(() => updateBalanceDisplays());
+                }
+                break;
+                
+            case 'UserProfileCreated':
+                // Only show if this event is for the current user
+                if (args.user.toLowerCase() === currentUserAddress) {
+                    const roleText = args.role.toString() === '0' ? 'Student' : 'Admin';
+                    addEventToUI('Profile', `${roleText} profile created successfully`, 'success');
+                }
+                break;
+            
+            default:
+                // Log other events for debugging
+                console.log('Other event (not displayed):', eventName, args);
+                break;
+        }
+        
+    } catch (error) {
+        console.error('Error handling blockchain event:', error);
+    }
+}
+
+/**
+ * Handle token contract events
+ * This processes token-related events like transfers and minting
+ */
+function handleTokenEvent(event) {
+    try {
+        const eventName = event.event;
+        const args = event.args;
+        
+        console.log('Token event received:', eventName, args);
+        
+        const currentUserAddress = userSession.walletAddress.toLowerCase();
+        
+        switch (eventName) {
+            case 'Transfer':
+                // Only show transfers TO or FROM the current user
+                if (args.to.toLowerCase() === currentUserAddress) {
+                    const amount = parseFloat(ethers.utils.formatEther(args.value)).toFixed(2);
+                    const fromAddress = args.from === '0x0000000000000000000000000000000000000000' ? 'Contract' : 
+                                       args.from.slice(0, 6) + '...' + args.from.slice(-4);
+                    addEventToUI('Token Transfer', `Received ${amount} CRST from ${fromAddress}`, 'success');
+                    // Refresh balance
+                    loadBalances().then(() => updateBalanceDisplays());
+                } else if (args.from.toLowerCase() === currentUserAddress) {
+                    const amount = parseFloat(ethers.utils.formatEther(args.value)).toFixed(2);
+                    const toAddress = args.to.slice(0, 6) + '...' + args.to.slice(-4);
+                    addEventToUI('Token Transfer', `Sent ${amount} CRST to ${toAddress}`, 'info');
+                    // Refresh balance
+                    loadBalances().then(() => updateBalanceDisplays());
+                }
+                break;
+                
+            case 'TokensMinted':
+                // Only show if tokens were minted TO the current user
+                if (args.to.toLowerCase() === currentUserAddress) {
+                    const amount = parseFloat(ethers.utils.formatEther(args.amount)).toFixed(2);
+                    addEventToUI('Token Mint', `Received ${amount} newly minted CRST tokens`, 'success');
+                    // Refresh balance
+                    loadBalances().then(() => updateBalanceDisplays());
+                }
+                break;
+        
+            default:
+                // Log other token events
+                console.log('Other token event (not displayed):', eventName, args);
+                break;
+        }
+        
+    } catch (error) {
+        console.error('Error handling token event:', error);
+    }
+}
+
+
+/**
+ * Add event to UI display
+ * This adds a new event to the real-time events panel
+ */
+function addEventToUI(category, message, type = 'info') {
+    const eventsContainer = document.getElementById('events-container');
+    if (!eventsContainer) return;
+    
+    const timestamp = new Date().toLocaleTimeString();
+    
+    // Determine icon and color based on event type
+    let icon = 'fa-info-circle';
+    let colorClass = 'text-info';
+    let bgClass = 'bg-light';
+    
+    switch (type) {
+        case 'success':
+            icon = 'fa-check-circle';
+            colorClass = 'text-success';
+            bgClass = 'bg-success bg-opacity-10';
+            break;
+        case 'error':
+            icon = 'fa-exclamation-circle';
+            colorClass = 'text-danger';
+            bgClass = 'bg-danger bg-opacity-10';
+            break;
+        case 'warning':
+            icon = 'fa-exclamation-triangle';
+            colorClass = 'text-warning';
+            bgClass = 'bg-warning bg-opacity-10';
+            break;
+        case 'info':
+            icon = 'fa-info-circle';
+            colorClass = 'text-info';
+            bgClass = 'bg-info bg-opacity-10';
+            break;
+    }
+    
+    // Create event element with improved styling
+    const eventElement = document.createElement('div');
+    eventElement.className = `border-start border-3 border-${type === 'success' ? 'success' : type === 'error' ? 'danger' : type === 'warning' ? 'warning' : 'info'} ps-3 pb-2 mb-3 ${bgClass} rounded p-2`;
+    eventElement.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start">
+            <div class="flex-grow-1">
+                <div class="d-flex align-items-center mb-1">
+                    <i class="fas ${icon} ${colorClass} me-2"></i>
+                    <strong class="${colorClass}">${category}</strong>
+                    <small class="text-muted ms-auto">${timestamp}</small>
+                </div>
+                <div class="small">${message}</div>
+            </div>
+        </div>
+    `;
+    
+    // Add to top of events container with smooth animation
+    eventsContainer.insertBefore(eventElement, eventsContainer.firstChild);
+    
+    // Add fade-in animation
+    eventElement.style.opacity = '0';
+    eventElement.style.transform = 'translateY(-10px)';
+    setTimeout(() => {
+        eventElement.style.transition = 'all 0.3s ease-in-out';
+        eventElement.style.opacity = '1';
+        eventElement.style.transform = 'translateY(0)';
+    }, 10);
+}
+
+// 7. DATA LOADING FUNCTIONS
 
 /**
  * Initialize dashboard by loading all necessary data
  * This loads all the information displayed on the student dashboard
  */
 async function initializeDashboard() {
-    console.log('📊 Loading student dashboard data...');
+    console.log('Loading student dashboard data...');
     
     try {
         // Load all data concurrently for better performance
@@ -592,49 +792,42 @@ async function initializeDashboard() {
         updateCartUI();
         updateWalletConnectionUI();
         
-        console.log('✅ Dashboard loaded successfully');
+        console.log('Dashboard loaded successfully');
     } catch (error) {
-        console.error('❌ Dashboard loading failed:', error);
+        console.error('Dashboard loading failed:', error);
         showMessage('Some data failed to load. Check console for details.', 'warning');
     }
 }
 
 /**
  * Load wallet balances from blockchain
- * This gets CRST and ETH balances for display in the dashboard
+ * This gets CRST balance for display in the dashboard
  */
 async function loadBalances() {
     try {
         if (provider && signer && crstTokenContract) {
             const walletAddress = await signer.getAddress();
             
-            console.log('💰 Loading balances for:', walletAddress);
+            console.log('Loading balances for:', walletAddress);
             
-            // Get CRST balance with circuit breaker handling
+            // Get CRST balance
             const crstBalanceWei = await testContractCall(async () => {
                 return await crstTokenContract.balanceOf(walletAddress);
             });
             balances.crst = parseFloat(ethers.utils.formatEther(crstBalanceWei)).toFixed(2);
             
-            // Get ETH balance with circuit breaker handling
-            const ethBalanceWei = await testContractCall(async () => {
-                return await provider.getBalance(walletAddress);
-            });
-            balances.eth = parseFloat(ethers.utils.formatEther(ethBalanceWei)).toFixed(3);
-            
-            console.log('💰 Balances loaded:', balances);
+            console.log('Balances loaded:', balances);
         } else {
             throw new Error('Contracts not available');
         }
     } catch (error) {
-        console.error('❌ Failed to load balances:', error);
+        console.error('Failed to load balances:', error);
         if (error.message.includes('MetaMask is temporarily overloaded')) {
             showMessage('MetaMask overloaded while loading balances. Will retry automatically.', 'warning');
         }
-        // Keep demo/error values
+        // Set error value instead of demo data
         balances = {
-            crst: 'Error',
-            eth: 'Error'
+            crst: 'Error'
         };
     }
 }
@@ -646,7 +839,7 @@ async function loadBalances() {
 async function loadCourses() {
     try {
         if (courseRegistrationContract) {
-            // Get list of all course IDs with circuit breaker handling
+            // Get list of all course IDs
             const courseIds = await testContractCall(async () => {
                 return await courseRegistrationContract.getAllCourseIds();
             });
@@ -659,6 +852,7 @@ async function loadCourses() {
                         return await courseRegistrationContract.getCourse(courseId);
                     });
                     
+                    // Convert contract data to JavaScript objects
                     courses.push({
                         id: course.id.toString(),
                         name: course.name,
@@ -679,11 +873,11 @@ async function loadCourses() {
             throw new Error('Course registration contract not available');
         }
     } catch (error) {
-        console.error('❌ Failed to load courses:', error);
+        console.error('Failed to load courses:', error);
         if (error.message.includes('MetaMask is temporarily overloaded')) {
-            console.log('📝 Using cached courses due to MetaMask overload');
+            console.log('Using cached courses due to MetaMask overload');
         }
-        // courses array will remain empty or use demo data
+        // courses array will remain empty or use existing data
     }
 }
 
@@ -696,12 +890,13 @@ async function loadRegisteredCourses() {
         if (courseRegistrationContract && signer) {
             const walletAddress = await signer.getAddress();
             
-            // Get student's registered course IDs with circuit breaker handling
+            // Get student's registered course IDs
             const studentCourseIds = await testContractCall(async () => {
                 return await courseRegistrationContract.getStudentCourses(walletAddress);
             });
             
             registeredCourses = [];
+            const courseMap = new Map(); // Use Map to store latest registration per course
             
             // Load details for each registered course
             for (const courseId of studentCourseIds) {
@@ -712,36 +907,49 @@ async function loadRegisteredCourses() {
                         return [courseData, registrationData];
                     });
                     
-                    registeredCourses.push({
-                        id: course.id.toString(),
-                        name: course.name,
-                        description: course.description,
-                        creditHours: course.creditHours.toString(),
-                        feeInTokens: course.feeInTokens.toString(),
-                        capacity: course.capacity.toString(),
-                        enrolled: course.enrolled.toString(),
-                        isActive: course.isActive,
-                        registrationDate: new Date(registration.timestamp.toNumber() * 1000),
-                        hasPaid: registration.hasPaid,
-                        paidAmount: registration.paidAmount.toString(),
-                        paidAt: registration.paidAt.toNumber() > 0 ? new Date(registration.paidAt.toNumber() * 1000) : null
-                    });
+                    const courseIdStr = courseId.toString();
+                    const registrationTime = registration.timestamp.toNumber();
+                    
+                    // Only keep the latest registration for each course
+                    if (!courseMap.has(courseIdStr) || 
+                        registrationTime > courseMap.get(courseIdStr).registrationTime) {
+                        
+                        courseMap.set(courseIdStr, {
+                            id: course.id.toString(),
+                            name: course.name,
+                            description: course.description,
+                            creditHours: course.creditHours.toString(),
+                            feeInTokens: course.feeInTokens.toString(),
+                            capacity: course.capacity.toString(),
+                            enrolled: course.enrolled.toString(),
+                            isActive: course.isActive,
+                            registrationDate: new Date(registrationTime * 1000),
+                            registrationTime: registrationTime,
+                            hasPaid: registration.hasPaid,
+                            paidAmount: registration.paidAmount.toString(),
+                            paidAt: registration.paidAt.toNumber() > 0 ? new Date(registration.paidAt.toNumber() * 1000) : null
+                        });
+                    }
                 } catch (registrationError) {
                     console.warn(`Failed to load registration for course ${courseId}:`, registrationError.message);
                 }
             }
+            
+            // Convert Map values to array
+            registeredCourses = Array.from(courseMap.values());
+            
+            console.log(`Loaded ${registeredCourses.length} unique registered courses (from ${studentCourseIds.length} total registrations)`);
+            
         } else {
             throw new Error('Course registration contract not available');
         }
     } catch (error) {
-        console.error('❌ Failed to load registered courses:', error);
+        console.error('Failed to load registered courses:', error);
         if (error.message.includes('MetaMask is temporarily overloaded')) {
-            console.log('📝 Using cached registered courses due to MetaMask overload');
+            console.log('Using cached registered courses due to MetaMask overload');
         }
-        // registeredCourses array will remain empty or use demo data
     }
 }
-
 /**
  * Load student's token requests from smart contract
  * This gets all token requests made by the student
@@ -751,7 +959,7 @@ async function loadTokenRequests() {
         if (courseRegistrationContract && signer) {
             const walletAddress = await signer.getAddress();
             
-            // Get all token requests and filter for this student with circuit breaker handling
+            // Get all token requests and filter for this student
             const allRequests = await testContractCall(async () => {
                 const counter = await courseRegistrationContract.tokenRequestCounter();
                 const requests = [];
@@ -771,6 +979,7 @@ async function loadTokenRequests() {
                 return requests;
             });
             
+            // Convert contract data to JavaScript objects
             tokenRequests = allRequests.map(request => ({
                 id: request.id.toString(),
                 amountInTokens: request.amountInTokens.toString(),
@@ -785,15 +994,15 @@ async function loadTokenRequests() {
             throw new Error('Course registration contract not available');
         }
     } catch (error) {
-        console.error('❌ Failed to load token requests:', error);
+        console.error('Failed to load token requests:', error);
         if (error.message.includes('MetaMask is temporarily overloaded')) {
-            console.log('📝 Using cached token requests due to MetaMask overload');
+            console.log('Using cached token requests due to MetaMask overload');
         }
-        // tokenRequests array will remain empty or use demo data
+        // tokenRequests array will remain empty or use existing data
     }
 }
 
-// 7. UI UPDATE & RENDERING FUNCTIONS
+// 8. UI UPDATE & RENDERING FUNCTIONS
 
 /**
  * Update UI elements with user session data
@@ -810,8 +1019,19 @@ function updateUserUI() {
 }
 
 /**
+ * Update blockchain connection status indicator
+ * This shows whether we're connected to blockchain
+ */
+function updateBlockchainStatus(status) {
+    const statusElement = document.getElementById('blockchain-status');
+    if (statusElement) {
+        statusElement.textContent = status;
+    }
+}
+
+/**
  * Update balance displays in the UI
- * This updates the balance cards with current CRST and ETH amounts
+ * This updates the balance cards with current CRST amounts
  */
 function updateBalanceDisplays() {
     const tokenBalanceElement = document.getElementById('token-balance');
@@ -876,7 +1096,7 @@ function renderCourses() {
         return;
     }
     
-    // Create a row for each course
+    // Create a row for each active course
     courses.forEach(course => {
         if (course.isActive) {
             const row = document.createElement('tr');
@@ -892,7 +1112,7 @@ function renderCourses() {
             const availability = `${course.enrolled}/${course.capacity}`;
             const availabilityClass = availableSpots === 0 ? 'text-danger' : availableSpots < 5 ? 'text-warning' : 'text-success';
             
-            // Build the HTML for this course row
+            // Build the HTML for this course row with action buttons
             row.innerHTML = `
                 <td>${course.id}</td>
                 <td>
@@ -906,9 +1126,6 @@ function renderCourses() {
                 <td>
                     ${!isRegistered && !isInCart && availableSpots > 0 ? 
                         `<div class="btn-group" role="group">
-                            <button class="btn btn-sm btn-success" onclick="registerForCourse('${course.id}')">
-                                <i class="fas fa-user-plus me-1"></i>Register
-                            </button>
                             <button class="btn btn-sm btn-primary" onclick="addToCart('${course.id}')">
                                 <i class="fas fa-cart-plus me-1"></i>Cart
                             </button>
@@ -945,8 +1162,13 @@ function renderRegisteredCourses() {
     // Clear existing content
     tableBody.innerHTML = '';
     
+    // Remove duplicates based on course ID
+    const uniqueRegisteredCourses = registeredCourses.filter((course, index, self) => 
+        index === self.findIndex(c => c.id === course.id)
+    );
+    
     // Show message if no registered courses
-    if (registeredCourses.length === 0) {
+    if (uniqueRegisteredCourses.length === 0) {
         tableBody.innerHTML = `
             <tr>
                 <td colspan="6" class="text-center py-3">
@@ -1065,7 +1287,7 @@ function renderCartCourses() {
  * This updates cart-related UI elements when cart changes
  */
 function updateCartUI() {
-    // Update cart badge
+    // Update cart badge count
     const cartBadge = document.querySelector('.cart-count');
     if (cartBadge) {
         cartBadge.textContent = cartCourses.length;
@@ -1144,7 +1366,7 @@ function renderTokenRequests() {
     });
 }
 
-// 8. EVENT LISTENER SETUP
+// 9. EVENT LISTENER SETUP
 
 /**
  * Setup all event listeners for buttons and modals
@@ -1175,16 +1397,29 @@ function setupEventListeners() {
         confirmPaymentBtn.addEventListener('click', processIndividualPayment);
     }
     
-    // Connect wallet button (fallback - should already be connected via login)
-    const connectButton = document.getElementById('connect-wallet');
-    if (connectButton) {
-        connectButton.addEventListener('click', function() {
-            showMessage('Wallet is already connected via login!', 'info');
-        });
+    // Token amount input change for cost calculation
+    const tokenAmountInput = document.getElementById('token-amount');
+    if (tokenAmountInput) {
+        tokenAmountInput.addEventListener('input', updateTokenRequestCost);
     }
 }
 
-// 9. COURSE MANAGEMENT FUNCTIONS
+/**
+ * Update token request cost display when amount changes
+ * This calculates and shows the ETH cost for the requested tokens
+ */
+function updateTokenRequestCost() {
+    const tokenAmountInput = document.getElementById('token-amount');
+    const ethCostDisplay = document.getElementById('eth-cost-display');
+    
+    if (tokenAmountInput && ethCostDisplay) {
+        const tokenAmount = parseFloat(tokenAmountInput.value) || 0;
+        const ethCost = tokenAmount / parseFloat(contractConstants.exchangeRate);
+        ethCostDisplay.textContent = `${ethCost.toFixed(4)} ETH`;
+    }
+}
+
+// 10. COURSE MANAGEMENT FUNCTIONS
 
 /**
  * Register for a single course
@@ -1195,9 +1430,9 @@ async function registerForCourse(courseId) {
         showLoadingState(`register-btn-${courseId}`, true);
         
         if (courseRegistrationContract) {
-            console.log(`📝 Registering for course ${courseId}...`);
+            console.log(`Registering for course ${courseId}...`);
             
-            // Call contract function to register with circuit breaker handling
+            // Call contract function to register
             const tx = await testContractCall(async () => {
                 return await courseRegistrationContract.registerForCourse(parseInt(courseId));
             });
@@ -1206,7 +1441,7 @@ async function registerForCourse(courseId) {
             
             // Wait for transaction confirmation
             const receipt = await tx.wait();
-            console.log('✅ Course registration successful:', receipt.transactionHash);
+            console.log('Course registration successful:', receipt.transactionHash);
             
             showMessage(`Successfully registered for course! You can now pay the course fee.`, 'success');
             
@@ -1217,33 +1452,11 @@ async function registerForCourse(courseId) {
             renderRegisteredCourses();
             
         } else {
-            // Demo mode
-            console.log('📺 Demo mode: Simulating course registration...');
-            
-            const course = courses.find(c => c.id === courseId);
-            if (course) {
-                // Add to registered courses
-                registeredCourses.push({
-                    ...course,
-                    registrationDate: new Date(),
-                    hasPaid: false,
-                    paidAmount: '0',
-                    paidAt: null
-                });
-                
-                // Update enrolled count
-                course.enrolled = (parseInt(course.enrolled) + 1).toString();
-                
-                // Update UI
-                renderCourses();
-                renderRegisteredCourses();
-                
-                showMessage(`Successfully registered for "${course.name}"! You can now pay the course fee.`, 'success');
-            }
+            throw new Error('Contract not available');
         }
         
     } catch (error) {
-        console.error('❌ Failed to register for course:', error);
+        console.error('Failed to register for course:', error);
         let errorMessage = error.message;
         
         // Handle specific contract errors
@@ -1276,7 +1489,7 @@ function addToCart(courseId) {
         return;
     }
     
-    // Check if already in cart
+    // Check if already in cart (PREVENT DUPLICATES)
     if (cartCourses.some(c => c.id === courseId)) {
         showMessage("Course is already in your cart", 'warning');
         return;
@@ -1295,15 +1508,28 @@ function addToCart(courseId) {
         return;
     }
     
+    // Check if course is active
+    if (!course.isActive) {
+        showMessage("This course is not available for registration", 'error');
+        return;
+    }
+    
+    // Check cart limit (optional - prevent too many courses at once)
+    if (cartCourses.length >= 10) {
+        showMessage("You can only add up to 10 courses to your cart at once", 'warning');
+        return;
+    }
+    
     // Add to cart
     cartCourses.push(course);
     
-    // Update UI
+    // Update UI immediately
     renderCourses();
     updateCartUI();
     
-    // Show success message
-    showMessage(`"${course.name}" has been added to your cart`, 'success');
+    // Show success message with course details
+    showMessage(`"${course.name}" (${course.feeInTokens} CRST) has been added to your cart`, 'success');
+    
 }
 
 /**
@@ -1320,7 +1546,7 @@ function removeFromCart(courseId) {
     showMessage('Course removed from cart', 'info');
 }
 
-// 10. PAYMENT FUNCTIONS
+// 11. PAYMENT FUNCTIONS
 
 /**
  * Show individual course payment modal
@@ -1386,11 +1612,11 @@ async function processIndividualPayment() {
         showLoadingState('confirm-payment', true);
         
         if (courseRegistrationContract && crstTokenContract) {
-            console.log(`💳 Processing payment for course ${currentPaymentCourseId}...`);
+            console.log(`Processing payment for course ${currentPaymentCourseId}...`);
             
             const courseFeeWei = ethers.utils.parseEther(course.feeInTokens);
             
-            // First, check current allowance with circuit breaker handling
+            // First, check current allowance
             const currentAllowance = await testContractCall(async () => {
                 const walletAddress = await signer.getAddress();
                 return await crstTokenContract.allowance(walletAddress, courseRegistrationContract.address);
@@ -1398,7 +1624,7 @@ async function processIndividualPayment() {
             
             // If allowance is insufficient, request approval first
             if (currentAllowance.lt(courseFeeWei)) {
-                console.log('📝 Requesting token approval...');
+                console.log('Requesting token approval...');
                 showMessage('Please approve the contract to spend your CRST tokens...', 'info');
                 
                 const approveTx = await testContractCall(async () => {
@@ -1407,7 +1633,7 @@ async function processIndividualPayment() {
                 
                 showMessage('Approval transaction sent! Waiting for confirmation...', 'info');
                 await approveTx.wait();
-                console.log('✅ Token approval confirmed');
+                console.log('Token approval confirmed');
             }
             
             // Now process the payment
@@ -1420,7 +1646,7 @@ async function processIndividualPayment() {
             showMessage('Payment transaction sent! Waiting for confirmation...', 'info');
             
             const receipt = await paymentTx.wait();
-            console.log('✅ Payment successful:', receipt.transactionHash);
+            console.log('Payment successful:', receipt.transactionHash);
             
             showMessage('Payment successful! Course fee paid.', 'success');
             
@@ -1431,29 +1657,7 @@ async function processIndividualPayment() {
             renderRegisteredCourses();
             
         } else {
-            // Demo mode
-            console.log('📺 Demo mode: Simulating payment...');
-            
-            const courseFee = parseFloat(course.feeInTokens);
-            const currentBalance = parseFloat(balances.crst);
-            
-            if (currentBalance >= courseFee) {
-                // Update balances
-                balances.crst = (currentBalance - courseFee).toFixed(2);
-                
-                // Update course payment status
-                course.hasPaid = true;
-                course.paidAt = new Date();
-                course.paidAmount = ethers.utils.parseEther(course.feeInTokens).toString();
-                
-                // Update UI
-                updateBalanceDisplays();
-                renderRegisteredCourses();
-                
-                showMessage('Payment successful! Course fee paid.', 'success');
-            } else {
-                throw new Error('Insufficient balance');
-            }
+            throw new Error('Contracts not available');
         }
         
         // Close modal
@@ -1463,7 +1667,7 @@ async function processIndividualPayment() {
         currentPaymentCourseId = null;
         
     } catch (error) {
-        console.error('❌ Payment failed:', error);
+        console.error('Payment failed:', error);
         let errorMessage = error.message;
         
         // Handle specific contract errors
@@ -1540,11 +1744,11 @@ function showCartPaymentModal() {
         confirmButton.disabled = false;
     }
     
-    // Show modal
-    const cartPaymentModal = new bootstrap.Modal(document.getElementById('cartPaymentModal'));
-    cartPaymentModal.show();
+    // ADD THIS LINE TO ACTUALLY SHOW THE MODAL:
+    const modal = new bootstrap.Modal(document.getElementById('cartPaymentModal'));
+    modal.show();
 }
-
+    
 /**
  * Process cart payment for multiple courses
  * This handles batch payment for all courses in cart
@@ -1559,39 +1763,67 @@ async function processCartPayment() {
         showLoadingState('confirm-cart-payment', true);
         
         if (courseRegistrationContract && crstTokenContract) {
-            console.log(`💳 Processing cart payment for ${cartCourses.length} courses...`);
+            console.log(`Processing cart payment for ${cartCourses.length} courses...`);
             
-            // First, register for all courses in cart
-            for (const course of cartCourses) {
+            // Remove duplicates from cart before processing
+            const uniqueCourseIds = [...new Set(cartCourses.map(c => c.id))];
+            const uniqueCourses = uniqueCourseIds.map(id => cartCourses.find(c => c.id === id));
+            
+            console.log(`Processing ${uniqueCourses.length} unique courses after duplicate removal`);
+            
+            // First, register for all unique courses in cart
+            for (const course of uniqueCourses) {
                 try {
-                    console.log(`📝 Registering for course ${course.id}...`);
+                    console.log(`Checking registration status for course ${course.id}...`);
+                    
+                    // Check if already registered first
+                    const isAlreadyRegistered = await testContractCall(async () => {
+                        const walletAddress = await signer.getAddress();
+                        const [isRegistered] = await courseRegistrationContract.isStudentRegistered(walletAddress, parseInt(course.id));
+                        return isRegistered;
+                    });
+                    
+                    if (isAlreadyRegistered) {
+                        console.log(`Already registered for course ${course.id}, skipping registration...`);
+                        continue;
+                    }
+                    
+                    console.log(`Registering for course ${course.id}...`);
+                    showMessage(`Registering for ${course.name}...`, 'info');
                     
                     const registerTx = await testContractCall(async () => {
                         return await courseRegistrationContract.registerForCourse(parseInt(course.id));
                     });
                     
                     await registerTx.wait();
-                    console.log(`✅ Registered for course ${course.id}`);
+                    console.log(`Successfully registered for course ${course.id}`);
                     
                 } catch (regError) {
                     if (regError.message.includes('Already registered')) {
-                        console.log(`ℹ️ Already registered for course ${course.id}, continuing...`);
+                        console.log(`Already registered for course ${course.id}, continuing...`);
+                    } else if (regError.message.includes('Course is full')) {
+                        throw new Error(`Course "${course.name}" is full and cannot be registered for`);
+                    } else if (regError.message.includes('Invalid/inactive course')) {
+                        throw new Error(`Course "${course.name}" is no longer available for registration`);
                     } else {
-                        throw regError;
+                        console.error(`Registration failed for course ${course.id}:`, regError);
+                        throw new Error(`Failed to register for "${course.name}": ${regError.message}`);
                     }
                 }
             }
             
-            // Calculate total fee needed
-            const courseIds = cartCourses.map(c => parseInt(c.id));
+            // Calculate total fee needed (use unique courses)
+            const courseIds = uniqueCourses.map(c => parseInt(c.id));
             let totalFeeWei = ethers.BigNumber.from(0);
             
-            cartCourses.forEach(course => {
+            uniqueCourses.forEach(course => {
                 const courseFeeWei = ethers.utils.parseEther(course.feeInTokens);
                 totalFeeWei = totalFeeWei.add(courseFeeWei);
             });
             
-            // Check current allowance with circuit breaker handling
+            console.log(`Total fee required: ${ethers.utils.formatEther(totalFeeWei)} CRST`);
+            
+            // Check current allowance
             const currentAllowance = await testContractCall(async () => {
                 const walletAddress = await signer.getAddress();
                 return await crstTokenContract.allowance(walletAddress, courseRegistrationContract.address);
@@ -1599,7 +1831,7 @@ async function processCartPayment() {
             
             // If allowance is insufficient, request approval
             if (currentAllowance.lt(totalFeeWei)) {
-                console.log('📝 Requesting token approval for batch payment...');
+                console.log('Requesting token approval for batch payment...');
                 showMessage('Please approve the contract to spend your CRST tokens for all courses...', 'info');
                 
                 const approveTx = await testContractCall(async () => {
@@ -1608,7 +1840,7 @@ async function processCartPayment() {
                 
                 showMessage('Approval transaction sent! Waiting for confirmation...', 'info');
                 await approveTx.wait();
-                console.log('✅ Token approval confirmed for batch payment');
+                console.log('Token approval confirmed for batch payment');
             }
             
             // Process batch payment
@@ -1621,9 +1853,9 @@ async function processCartPayment() {
             showMessage('Batch payment transaction sent! Waiting for confirmation...', 'info');
             
             const receipt = await paymentTx.wait();
-            console.log('✅ Batch payment successful:', receipt.transactionHash);
+            console.log('Batch payment successful:', receipt.transactionHash);
             
-            showMessage(`Successfully paid for ${cartCourses.length} courses!`, 'success');
+            showMessage(`Successfully registered and paid for ${uniqueCourses.length} courses!`, 'success');
             
             // Clear cart and refresh data
             cartCourses = [];
@@ -1636,54 +1868,7 @@ async function processCartPayment() {
             updateCartUI();
             
         } else {
-            // Demo mode
-            console.log('📺 Demo mode: Simulating cart payment...');
-            
-            let totalFee = 0;
-            cartCourses.forEach(course => {
-                totalFee += parseFloat(course.feeInTokens);
-            });
-            
-            const currentBalance = parseFloat(balances.crst);
-            
-            if (currentBalance >= totalFee) {
-                // Update balance
-                balances.crst = (currentBalance - totalFee).toFixed(2);
-                
-                // Move courses from cart to registered courses
-                const timestamp = new Date();
-                cartCourses.forEach(course => {
-                    // Check if not already registered
-                    if (!registeredCourses.some(rc => rc.id === course.id)) {
-                        registeredCourses.push({
-                            ...course,
-                            registrationDate: timestamp,
-                            hasPaid: true,
-                            paidAmount: ethers.utils.parseEther(course.feeInTokens).toString(),
-                            paidAt: timestamp
-                        });
-                        
-                        // Update enrolled count
-                        const courseIndex = courses.findIndex(c => c.id === course.id);
-                        if (courseIndex !== -1) {
-                            courses[courseIndex].enrolled = (parseInt(courses[courseIndex].enrolled) + 1).toString();
-                        }
-                    }
-                });
-                
-                // Clear cart
-                cartCourses = [];
-                
-                // Update UI
-                updateBalanceDisplays();
-                renderCourses();
-                renderRegisteredCourses();
-                updateCartUI();
-                
-                showMessage(`Successfully paid for ${cartCourses.length} courses!`, 'success');
-            } else {
-                throw new Error('Insufficient balance for cart payment');
-            }
+            throw new Error('Contracts not available');
         }
         
         // Close modal
@@ -1691,7 +1876,7 @@ async function processCartPayment() {
         if (modal) modal.hide();
         
     } catch (error) {
-        console.error('❌ Cart payment failed:', error);
+        console.error('Cart payment failed:', error);
         let errorMessage = error.message;
         
         // Handle specific contract errors
@@ -1707,15 +1892,19 @@ async function processCartPayment() {
             errorMessage = 'Please register for all courses before payment';
         } else if (error.message.includes('Maximum 10 courses')) {
             errorMessage = 'You can only pay for up to 10 courses at once';
+        } else if (error.message.includes('Course') && error.message.includes('full')) {
+            errorMessage = error.message; // Use the specific course full message
+        } else if (error.message.includes('Course') && error.message.includes('no longer available')) {
+            errorMessage = error.message; // Use the specific course unavailable message
         }
         
         showMessage('Cart payment failed: ' + errorMessage, 'error');
+        
     } finally {
         showLoadingState('confirm-cart-payment', false);
     }
 }
-
-// 11. TOKEN REQUEST FUNCTIONS
+// 12. TOKEN REQUEST FUNCTIONS
 
 /**
  * Submit token request with ETH payment
@@ -1751,14 +1940,14 @@ async function submitTokenRequest() {
         showLoadingState('submit-token-request', true);
         
         if (courseRegistrationContract) {
-            console.log(`💰 Requesting ${amount} CRST tokens...`);
+            console.log(`Requesting ${amount} CRST tokens...`);
             
-            // Calculate required ETH with circuit breaker handling
+            // Calculate required ETH
             const ethRequired = await testContractCall(async () => {
                 return await courseRegistrationContract.getRequiredEthForTokens(parseInt(amount));
             });
             
-            console.log(`💳 ETH required: ${ethers.utils.formatEther(ethRequired)} ETH`);
+            console.log(`ETH required: ${ethers.utils.formatEther(ethRequired)} ETH`);
             
             // Check if user has enough ETH
             const userEthBalance = await testContractCall(async () => {
@@ -1782,35 +1971,16 @@ async function submitTokenRequest() {
             showMessage('Token request submitted! Waiting for confirmation...', 'info');
             
             const receipt = await tx.wait();
-            console.log('✅ Token request submitted:', receipt.transactionHash);
+            console.log('Token request submitted:', receipt.transactionHash);
             
             showMessage('Token request submitted successfully! An administrator will review your request.', 'success');
             
             // Refresh data
             await loadTokenRequests();
-            await loadBalances();
             renderTokenRequests();
-            updateBalanceDisplays();
             
         } else {
-            // Demo mode
-            console.log('📺 Demo mode: Simulating token request...');
-            
-            const newRequest = {
-                id: (tokenRequests.length + 1).toString(),
-                amountInTokens: amount,
-                ethRequired: (parseFloat(amount) / parseFloat(contractConstants.exchangeRate)).toFixed(4),
-                reason: reason,
-                status: 0, // Pending
-                timestamp: new Date(),
-                processedAt: null,
-                processedBy: null
-            };
-            
-            tokenRequests.push(newRequest);
-            renderTokenRequests();
-            
-            showMessage('Token request submitted successfully! An administrator will review your request.', 'success');
+            throw new Error('Contract not available');
         }
         
         // Hide modal and reset form
@@ -1819,7 +1989,7 @@ async function submitTokenRequest() {
         document.getElementById('request-tokens-form').reset();
         
     } catch (error) {
-        console.error('❌ Token request failed:', error);
+        console.error('Token request failed:', error);
         let errorMessage = error.message;
         
         // Handle specific contract errors
@@ -1841,7 +2011,7 @@ async function submitTokenRequest() {
     }
 }
 
-// 12. PERIODIC REFRESH & UTILITY FUNCTIONS
+// 13. PERIODIC REFRESH & UTILITY FUNCTIONS
 
 /**
  * Start periodic refresh of dashboard data
@@ -1901,10 +2071,10 @@ async function refreshAllData() {
         renderTokenRequests();
         updateCartUI();
         
-        showMessage('✅ All data refreshed successfully!', 'success');
+        showMessage('All data refreshed successfully!', 'success');
         
     } catch (error) {
-        console.error('❌ Failed to refresh data:', error);
+        console.error('Failed to refresh data:', error);
         if (error.message.includes('MetaMask is temporarily overloaded')) {
             showMessage('MetaMask is temporarily overloaded. Please wait a moment and try again.', 'warning');
         } else {
@@ -1919,10 +2089,18 @@ async function refreshAllData() {
  */
 function logout() {
     try {
-        console.log('🚪 Student portal logout initiated...');
+        console.log('Student portal logout initiated...');
         
         // Stop periodic refresh
         stopPeriodicRefresh();
+        
+        // Stop event monitoring
+        if (courseRegistrationContract) {
+            courseRegistrationContract.removeAllListeners();
+        }
+        if (crstTokenContract) {
+            crstTokenContract.removeAllListeners();
+        }
         
         // Clear local contract data
         userSession = null;
@@ -1946,11 +2124,11 @@ function logout() {
         removeStoredSession();
         sessionStorage.removeItem('studentRedirectCount');
         
-        console.log('🔄 Redirecting to login page...');
+        console.log('Redirecting to login page...');
         window.location.href = 'login.html';
         
     } catch (error) {
-        console.error('❌ Logout failed:', error);
+        console.error('Logout failed:', error);
         // Force redirect on logout failure
         removeStoredSession();
         window.location.href = 'login.html';
@@ -1986,7 +2164,7 @@ function showLoadingState(buttonId, loading) {
  * This displays temporary notifications to the user
  */
 function showMessage(message, type = 'info') {
-    console.log(`💬 ${type.toUpperCase()}:`, message);
+    console.log(`${type.toUpperCase()}:`, message);
     
     // Determine alert styling based on message type
     const alertClass = type === 'error' ? 'alert-danger' : 
@@ -2023,11 +2201,19 @@ function showMessage(message, type = 'info') {
  */
 function cleanup() {
     stopPeriodicRefresh();
+    
+    // Stop event monitoring
+    if (courseRegistrationContract) {
+        courseRegistrationContract.removeAllListeners();
+    }
+    if (crstTokenContract) {
+        crstTokenContract.removeAllListeners();
+    }
 }
 
-// 13. GLOBAL EXPORTS & EVENT SETUP
+// 14. GLOBAL EXPORTS & EVENT SETUP
 
-// Export functions for HTML onclick handlers
+// GLOBAL EXPORTS & EVENT SETUP
 window.registerForCourse = registerForCourse;
 window.addToCart = addToCart;
 window.removeFromCart = removeFromCart;
@@ -2035,8 +2221,9 @@ window.showPaymentModal = showPaymentModal;
 window.showCartPaymentModal = showCartPaymentModal;
 window.processCartPayment = processCartPayment;
 window.submitTokenRequest = submitTokenRequest;
-window.refreshAllData = refreshAllData;
+window.refreshAllData = refreshAllData; 
 window.logout = logout;
+window.updateTokenRequestCost = updateTokenRequestCost;
 
 // Setup cleanup on page unload
 window.addEventListener('beforeunload', cleanup);

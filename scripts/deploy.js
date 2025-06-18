@@ -19,7 +19,7 @@ async function main() {
     }
     
     const currentBlock = await ethers.provider.getBlockNumber();
-    console.log(`✅ Generated ${currentBlock} blocks for MetaMask compatibility`);
+    console.log(`Generated ${currentBlock} blocks for MetaMask compatibility`);
 
     // Deploy CRSTToken first
     const CRSTToken = await ethers.getContractFactory("CRSTToken");
@@ -119,8 +119,8 @@ async function main() {
         console.log(`COURSE_REGISTRATION: '${registrationAddress}'`);
     }
     
-    console.log("\n🎉 Deployment complete!");
-    console.log(`📊 Final blockchain state: ${finalBlock} blocks`);
+    console.log("\n Deployment complete!");
+    console.log(`Final blockchain state: ${finalBlock} blocks`);
     
     return {
         crstToken: tokenAddress,

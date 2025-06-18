@@ -23,19 +23,13 @@ interface ICRSTTokenAutoBurn {
 
 /**
  * Course Registration System with Dual Auto-Burn Token Economics and Cart Functionality
- * 
- * AUTO-BURN APPROACH 1: Burns equivalent CRST when ETH is withdrawn
- * AUTO-BURN APPROACH 2: Burns excess CRST when contract balance exceeds threshold
- * 
- * CART FUNCTIONALITY: Students can pay for multiple courses at once
- * 
  * Features:
  * - Wallet-only authentication (no email required)
  * - Course registration and fee payment system
  * - Token request system with ETH payment
  * - Automatic token burning to maintain supply balance
  * - Shopping cart functionality for multiple course payments
- * - 25,000 CRST token supply cap with efficient management
+ * - 25,000 CRST token supply cap 
  * 
  * Authors: Ghazal E Ashar & Shahzeb Ahmed Iqbal
  */

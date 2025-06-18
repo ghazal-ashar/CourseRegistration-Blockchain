@@ -7,13 +7,12 @@ let crstTokenContract = null;
 let isProcessing = false;
 
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('🔍 Page loaded:', window.location.pathname);
     
     // Check if CONTRACT_CONFIG is available
     if (typeof CONTRACT_CONFIG === 'undefined') {
-        console.warn('⚠️ CONTRACT_CONFIG not found. Make sure config.js is loaded.');
+        console.warn('CONTRACT_CONFIG not found. Make sure config.js is loaded.');
     } else {
-        console.log('✅ CONTRACT_CONFIG loaded:', CONTRACT_CONFIG);
+        console.log('CONTRACT_CONFIG loaded:', CONTRACT_CONFIG);
     }
     
     if (window.location.pathname.includes('login.html')) {
@@ -24,14 +23,14 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function handleLoginPage() {
-    console.log('📱 Handling login page...');
+    console.log('Handling login page');
     
     const existingSession = getStoredSession();
     if (existingSession) {
         try {
             const session = JSON.parse(existingSession);
             if (session.walletAddress && session.role) {
-                console.log('✅ Existing session found, redirecting...');
+                console.log('Existing session found');
                 
                 if (!sessionStorage.getItem('loginRedirecting')) {
                     sessionStorage.setItem('loginRedirecting', 'true');
@@ -43,7 +42,7 @@ function handleLoginPage() {
                 return;
             }
         } catch (e) {
-            console.log('❌ Invalid session data, clearing...');
+            console.log('Invalid session data. Clearing');
             removeStoredSession();
         }
     }
@@ -54,10 +53,10 @@ function handleLoginPage() {
 function setupWalletConnection() {
     const connectBtn = document.getElementById('connect-metamask');
     if (connectBtn) {
-        console.log('✅ Setting up wallet connection button');
+        console.log('Setting up wallet connection button');
         connectBtn.addEventListener('click', connectMetaMask);
     } else {
-        console.log('❌ Connect button not found');
+        console.log('Connect button not found');
     }
 }
 
@@ -82,21 +81,21 @@ async function connectMetaMask() {
             throw new Error('MetaMask is not installed. Please install MetaMask extension from https://metamask.io/');
         }
         
-        console.log('✅ MetaMask detected');
+        console.log('MetaMask detected');
         
         // Step 2: Check if ethers.js is loaded
         if (typeof ethers === 'undefined') {
             throw new Error('Ethers.js library not loaded. Please ensure ethers.js is included in your HTML.');
         }
         
-        console.log('✅ Ethers.js loaded');
+        console.log('Ethers.js loaded');
         
         // Step 3: FORCE MetaMask to show account selection popup
-        console.log('🔄 Forcing MetaMask account selection...');
+        console.log('Forcing MetaMask account selection');
         
         // First disconnect any existing connections
         if (window.ethereum.selectedAddress) {
-            console.log('🔌 Disconnecting existing connection...');
+            console.log('Disconnecting existing connection.');
         }
         
         // Force MetaMask to show account selection by requesting permissions
@@ -107,9 +106,9 @@ async function connectMetaMask() {
             }]
         });
         
-        console.log('✅ Permissions granted:', accounts);
+        console.log('Permissions granted:', accounts);
         
-        // Now request account access (this should show the popup)
+        // Now request account access (for popup isse)
         const accountsList = await window.ethereum.request({ 
             method: 'eth_requestAccounts' 
         });
@@ -118,17 +117,18 @@ async function connectMetaMask() {
             throw new Error('No accounts found. Please unlock MetaMask and try again.');
         }
         
-        console.log('✅ Accounts received:', accountsList);
+        console.log('Accounts received:', accountsList);
         
         // Step 4: Create provider
-        console.log('🔄 Creating ethers provider...');
+        console.log('Creating ethers provider...');
         provider = new ethers.providers.Web3Provider(window.ethereum);
         
         // Step 5: Get signer and account
         signer = provider.getSigner();
         connectedAccount = await signer.getAddress();
         
-        console.log('✅ Connected account:', connectedAccount);
+        console.log('Connected account:', connectedAccount);
+
         // STORE PROVIDER/SIGNER GLOBALLY FOR OTHER PAGES TO REUSE
         window.provider = provider;
         window.signer = signer;
@@ -136,11 +136,11 @@ async function connectMetaMask() {
         
         // Step 6: Check network
         const network = await provider.getNetwork();
-        console.log('🌐 Connected to network:', network);
+        console.log('Connected to network:', network);
         
         if (network.chainId !== 31337) {
-            console.warn('⚠️ Not connected to localhost network. Current chain:', network.chainId);
-            showMessage(`⚠️ You're connected to chain ${network.chainId}. Please switch to localhost (31337) for full functionality.`, 'warning');
+            console.warn('Not connected to localhost network. Current chain:', network.chainId);
+            showMessage(`You're connected to chain ${network.chainId}. Please switch to localhost (31337) for full functionality.`, 'warning');
             
             // Try to switch to localhost network
             try {
@@ -151,7 +151,7 @@ async function connectMetaMask() {
                 
                 // Refresh the network info after switching
                 const newNetwork = await provider.getNetwork();
-                console.log('🌐 Switched to network:', newNetwork);
+                console.log('Switched to network:', newNetwork);
                 
             } catch (switchError) {
                 console.log('Could not switch network:', switchError);
@@ -184,7 +184,7 @@ async function connectMetaMask() {
         await handleWalletAuthentication(connectedAccount);
         
     } catch (error) {
-        console.error('❌ MetaMask connection failed:', error);
+        console.error('MetaMask connection failed:', error);
         
         let errorMessage = error.message;
         
@@ -210,25 +210,24 @@ async function connectMetaMask() {
 }
 
 async function initializeContractsWithEthers() {
+
     // Skip if CONTRACT_CONFIG is not available
     if (typeof CONTRACT_CONFIG === 'undefined') {
-        console.warn('⚠️ CONTRACT_CONFIG not available - contracts will not be initialized');
+        console.warn('CONTRACT_CONFIG not available - contracts will not be initialized');
         return;
     }
     
     if (!CONTRACT_CONFIG?.ADDRESSES?.COURSE_REGISTRATION) {
-        console.warn('⚠️ Contract addresses not configured properly');
+        console.warn('Contract addresses not configured properly');
         return;
     }
     
     try {
-        console.log('🔄 Initializing contracts...');
+        console.log('Initializing contracts...');
         console.log('Contract address:', CONTRACT_CONFIG.ADDRESSES.COURSE_REGISTRATION);
         
-        // SKIP THE PROBLEMATIC getCode CHECK
-        // We'll just try to initialize and test with a simple call instead
-        console.log('⚠️ Skipping bytecode check due to MetaMask issue...');
-        
+        // Test with a simple call
+
         // Initialize contracts with ethers.js
         courseRegistrationContract = new ethers.Contract(
             CONTRACT_CONFIG.ADDRESSES.COURSE_REGISTRATION,
@@ -244,7 +243,7 @@ async function initializeContractsWithEthers() {
             );
         }
         
-        console.log('✅ Contracts initialized successfully with ethers.js');
+        console.log('Contracts initialized successfully with ethers.js');
 
         // STORE GLOBALLY FOR OTHER PAGES TO REUSE
         window.provider = provider;
@@ -255,30 +254,28 @@ async function initializeContractsWithEthers() {
         
         // Test contract connection with a simple read call instead of getCode
         try {
-            console.log('🧪 Testing contract connection...');
+            console.log('Testing contract connection...');
             const owner = await courseRegistrationContract.owner();
-            console.log('✅ Contract connection test successful. Owner:', owner);
-            console.log('🎉 Blockchain integration is working!');
+            console.log('Contract connection test successful. Owner:', owner);
+            console.log('Blockchain integration is working!');
         } catch (testError) {
             console.warn('⚠️ Contract connection test failed:', testError.message);
             // If the owner() call fails, the contract probably doesn't exist
-            // But let's not fail completely - maybe it's just a different error
             if (testError.message.includes('revert') || testError.message.includes('call exception')) {
-                console.warn('⚠️ Contract seems to exist but call failed - continuing with blockchain mode');
+                console.warn('Contract seems to exist but call failed - continuing with blockchain mode');
             } else {
-                console.warn('⚠️ Contract probably doesn\'t exist - falling back to demo mode');
+                console.warn('Contract probably doesn\'t exist - falling back to demo mode');
                 courseRegistrationContract = null;
                 crstTokenContract = null;
             }
         }
         
     } catch (contractError) {
-        console.warn('⚠️ Contract initialization failed:', contractError.message);
+        console.warn('Contract initialization failed:', contractError.message);
         courseRegistrationContract = null;
         crstTokenContract = null;
         
-        // Don't show error for contract issues - the app can work without blockchain
-        console.log('ℹ️ App will continue in demo mode without blockchain functionality');
+        console.log('Demo mode, no blockchain');
     }
 }
 
@@ -293,30 +290,29 @@ async function registerAsStudent() {
         if (studentRegisterBtn) studentRegisterBtn.disabled = true;
         if (adminRequestBtn) adminRequestBtn.disabled = true;
         
-        showRegistrationMessage('📝 Registering as student...', 'info');
+        showRegistrationMessage('Registering as student', 'info');
         
         if (courseRegistrationContract) {
             try {
                 // Test the contract connection first
-                console.log('🧪 Testing contract connection...');
+                console.log('Testing contract connection...');
                 const owner = await courseRegistrationContract.owner();
-                console.log('✅ Contract owner:', owner);
+                console.log('Contract owner:', owner);
                 
-                showRegistrationMessage('⏳ Please confirm the transaction in MetaMask...', 'info');
+                showRegistrationMessage('⏳ Please confirm the transaction in MetaMask', 'info');
                 
-                // Try the registration transaction - FIXED ethers v5 syntax
+                // Try the registration transaction
                 const tx = await courseRegistrationContract.registerAsStudent({
                     gasLimit: 300000
-                    // Remove the gasPrice line that was causing the error
                 });
                 
-                console.log('⏳ Transaction sent:', tx.hash);
-                showRegistrationMessage('⏳ Transaction sent! Waiting for confirmation...', 'info');
+                console.log('Transaction sent:', tx.hash);
+                showRegistrationMessage('Transaction sent! Waiting for confirmation.', 'info');
                 
                 // Wait for transaction to be mined
                 const receipt = await tx.wait();
-                console.log('✅ Student registration successful:', receipt.transactionHash);
-                showRegistrationMessage('✅ Registration successful! Redirecting...', 'success');
+                console.log('Student registration successful:', receipt.transactionHash);
+                showRegistrationMessage('Registration successful! Redirecting.', 'success');
                 
                 // Wait a moment for the blockchain to update, then redirect
                 setTimeout(() => {
@@ -368,7 +364,7 @@ async function handleWalletAuthentication(account) {
         
         // Check if this is the contract owner (hardhat account 0)
         if (account.toLowerCase() === '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266') {
-            console.log('👑 Contract Owner detected');
+            console.log('Contract Owner detected');
             userRole = 'admin';
             createSessionAndRedirect(account, userRole, false, true);
             return;
@@ -381,38 +377,43 @@ async function handleWalletAuthentication(account) {
                 
                 // Test contract connection first
                 await courseRegistrationContract.owner();
-                console.log('✅ Contract connection confirmed');
+                console.log('Contract connection confirmed');
                 
-                // Try to get user profile
-                if (typeof courseRegistrationContract.getUserProfile === 'function') {
-                    const profile = await courseRegistrationContract.getUserProfile(account);
+                // FIXED: Use userProfiles mapping directly instead of getUserProfile function
+                console.log('📋 Checking user profile...');
+                const profile = await courseRegistrationContract.userProfiles(account);
+                
+                console.log('📋 Profile data:', {
+                    walletAddress: profile.walletAddress,
+                    role: profile.role.toString(),
+                    isActive: profile.isActive,
+                    registeredAt: profile.registeredAt.toString()
+                });
+                
+                // Check if user is active and has a valid profile
+                if (profile.isActive && profile.walletAddress !== '0x0000000000000000000000000000000000000000') {
+                    // profile.role: 0 = Student, 1 = Admin
+                    const role = profile.role.toString() === '0' ? 'student' : 'admin';
+                    console.log('👤 Existing user found with role:', role);
+                    console.log('📅 Registered at:', new Date(profile.registeredAt.toNumber() * 1000).toLocaleString());
                     
-                    console.log('📋 Profile data:', profile);
-                    
-                    // Check if user is active (profile[2] is isActive)
-                    if (profile && profile[2] === true) {
-                        // profile[1] is role: 0 = Student, 1 = Admin
-                        const role = profile[1] === 0 ? 'student' : 'admin';
-                        console.log('👤 Existing user found with role:', role);
-                        console.log('📅 Registered at:', new Date(profile[3] * 1000).toLocaleString());
-                        
-                        showMessage(`Welcome back! Redirecting to ${role} portal...`, 'success');
-                        createSessionAndRedirect(account, role, false, false);
-                        return;
-                    } else {
-                        console.log('📝 User profile exists but not active, or new user');
-                    }
+                    showMessage(`Welcome back! Redirecting to ${role} portal...`, 'success');
+                    createSessionAndRedirect(account, role, false, false);
+                    return;
                 } else {
-                    console.warn('⚠️ getUserProfile function not found in contract');
+                    console.log('📝 User profile not found or not active');
                 }
                 
             } catch (profileError) {
                 console.log('📝 User profile check failed:', profileError.message);
                 
-                // If it's an RPC error, we'll continue to show registration options
-                // but registration will fall back to demo mode
-                if (profileError.code === -32603 || profileError.message.includes('JSON-RPC')) {
+                // If it's a revert error, the user probably doesn't exist
+                if (profileError.message.includes('revert') || profileError.message.includes('call exception')) {
+                    console.log('📝 User not registered in contract - showing registration options');
+                } else if (profileError.code === -32603 || profileError.message.includes('JSON-RPC')) {
                     console.log('⚠️ RPC error during profile check - registration will use demo mode');
+                } else {
+                    console.warn('⚠️ Unexpected error during profile check:', profileError);
                 }
             }
         }
@@ -439,6 +440,74 @@ async function testContractConnection() {
     } catch (error) {
         console.log('Contract connection test failed:', error.message);
         return false;
+    }
+}
+
+async function testContractCall(contractCallFunction, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            return await contractCallFunction();
+        } catch (error) {
+            // Check for MetaMask circuit breaker error
+            if (error.message && (
+                error.message.includes('circuit breaker') ||
+                error.message.includes('rate limit') ||
+                error.message.includes('too many requests') ||
+                error.code === -32603
+            )) {
+                console.warn(`⚠️ MetaMask circuit breaker detected, attempt ${attempt}/${maxRetries}`);
+                
+                if (attempt < maxRetries) {
+                    // Wait 2 seconds before retrying
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    continue;
+                } else {
+                    throw new Error('MetaMask is temporarily overloaded. Please wait a moment and try again.');
+                }
+            }
+            
+            // For other errors, throw immediately
+            throw error;
+        }
+    }
+}
+
+/**
+ * Check if a user is registered and active in the smart contract
+ * Add this helper function to login.js
+ */
+async function checkUserProfile(walletAddress) {
+    try {
+        if (!courseRegistrationContract) {
+            return { isRegistered: false, role: 'unknown', isActive: false, profile: null };
+        }
+        
+        // Get user profile from contract with circuit breaker handling
+        const profile = await testContractCall(async () => {
+            return await courseRegistrationContract.userProfiles(walletAddress);
+        });
+        
+        // Check if profile exists (walletAddress will be 0x0 if not registered)
+        const isRegistered = profile.walletAddress !== '0x0000000000000000000000000000000000000000';
+        const isActive = profile.isActive;
+        const role = isRegistered ? (profile.role.toString() === '0' ? 'student' : 'admin') : 'unknown';
+        
+        return {
+            isRegistered,
+            role,
+            isActive,
+            profile: isRegistered ? {
+                walletAddress: profile.walletAddress,
+                role: profile.role.toString(),
+                isActive: profile.isActive,
+                registeredAt: profile.registeredAt.toNumber(),
+                approvedBy: profile.approvedBy
+            } : null
+        };
+        
+    } catch (error) {
+        console.warn('Failed to check user profile:', error.message);
+        return { isRegistered: false, role: 'unknown', isActive: false, profile: null };
     }
 }
 
