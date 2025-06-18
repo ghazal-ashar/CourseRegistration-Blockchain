@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 
-// Interface for CRST token with dual auto-burn functionality
+// Interface for CRST token
 interface ICRSTTokenAutoBurn {
     function mint(address to, uint256 amount) external;
     function burn(uint256 amount) external;
@@ -22,17 +22,17 @@ interface ICRSTTokenAutoBurn {
 }
 
 /**
- * Course Registration System with Dual Auto-Burn Token Economics and Cart Functionality
+ * Course Registration System
  * Features:
  * - Wallet-only authentication (no email required)
  * - Course registration and fee payment system
  * - Token request system with ETH payment
  * - Automatic token burning to maintain supply balance
  * - Shopping cart functionality for multiple course payments
- * - 25,000 CRST token supply cap 
  * 
  * Authors: Ghazal E Ashar & Shahzeb Ahmed Iqbal
  */
+
 contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
 
     // Reference to auto-burn token contract - cannot be changed after deployment
@@ -126,7 +126,7 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
     // Counter for token requests (starts at 1)
     uint256 public tokenRequestCounter;
     
-    // Total fees collected by the contract (in CRST tokens)
+    // Total fees collected by the contract
     uint256 public totalFeesCollected;
     
     // Total ETH collected from token purchases
@@ -151,6 +151,7 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
     uint8 public constant MAX_CREDIT_HOURS = 6;
     
     // Events
+
     // Course management events
     event CourseAdded(uint256 indexed courseId, string name, uint256 feeInTokens, address indexed admin);
     event CourseUpdated(uint256 indexed courseId, string name, uint256 feeInTokens, address indexed admin);
@@ -162,7 +163,7 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
     event FeesPaid(address indexed student, uint256 indexed courseId, uint256 amount, uint256 timestamp);
     event BatchFeePaid(address indexed student, uint256[] courseIds, uint256 totalAmount, uint256 timestamp);
     
-    // Token request events - 2-step process tracking
+    // Token request events
     event TokenRequested(uint256 indexed requestId, address indexed student, uint256 amountInTokens, uint256 ethRequired, string reason, uint256 timestamp);
     event TokenRequestApproved(uint256 indexed requestId, address indexed student, uint256 amountInTokens, address indexed admin);
     event TokenRequestRejected(uint256 indexed requestId, address indexed student, address indexed admin);
@@ -218,7 +219,7 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
         beneficiary = _beneficiary;
     }
     
-    // Register as a student - wallet address only, no automatic allowances
+    // Register as a student - wallet address only
     function registerAsStudent() external {
         require(!userProfiles[msg.sender].isActive, "User already registered");
         require(!pendingAdmins[msg.sender], "Admin request pending");
@@ -338,8 +339,7 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
     }
 
     /**
-    * Deactivate a course (stop new registrations)
-    * @param courseId The ID of the course to deactivate
+    * Deactivate a course
     */
     function deactivateCourse(uint256 courseId) external onlyOwnerOrAdmin whenNotPaused {
         require(courseId >= 100 && courseId <= 999 && courses[courseId].id != 0, "Course not found");
@@ -350,8 +350,7 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
     }
 
     /**
-    * Activate a course (allow new registrations)
-    * @param courseId The ID of the course to activate
+    * Activate a course 
     */
     function activateCourse(uint256 courseId) external onlyOwnerOrAdmin whenNotPaused {
         require(courseId >= 100 && courseId <= 999 && courses[courseId].id != 0, "Course not found");
@@ -363,10 +362,10 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
 
     /**
     * Get detailed course information including financial metrics
-    * @param courseId The ID of the course
-    * @return course The course struct
-    * @return revenue Total revenue generated (in wei)
-    * @return enrollmentRate Enrollment rate percentage (0-100)
+    * courseId The ID of the course
+    * course The course struct
+    * revenue Total revenue generated (in wei)
+    * enrollmentRate Enrollment rate percentage
     */
     function getCourseDetails(uint256 courseId) external view returns (
         Course memory course,
@@ -384,10 +383,10 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
 
     /**
     * Check if a student is registered for a course
-    * @param student Student address
-    * @param courseId Course ID
-    * @return isRegistered Whether student is registered
-    * @return hasPaid Whether student has paid fees
+    *  student Student address
+    *  courseId Course ID
+    *  isRegistered Whether student is registered
+    *  hasPaid Whether student has paid fees
     */
     function isStudentRegistered(address student, uint256 courseId) external view returns (
         bool isRegistered, 
@@ -402,9 +401,9 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
 
     /**
     * Get registration details for a student and course
-    * @param student Student address
-    * @param courseId Course ID
-    * @return registration The registration struct
+    *  student Student address
+    *  courseId Course ID
+    *  registration The registration struct
     */
     function getRegistration(address student, uint256 courseId) external view returns (Registration memory registration) {
         require(courses[courseId].id != 0, "Course not found");
@@ -610,7 +609,7 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
         emit TokenRequestRejected(requestId, request.student, msg.sender);
     }
     
-    // NEW: Students can return CRST tokens for ETH (with 0.5% fee)
+    // Students can return CRST tokens for ETH (with 0.5% fee)
     function returnCRSTForETH(uint256 crstAmount) external nonReentrant whenNotPaused onlyStudent {
         require(crstAmount > 0, "Amount must be greater than 0");
         require(crstToken.balanceOf(msg.sender) >= crstAmount, "Insufficient CRST balance");
@@ -644,13 +643,11 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
         emit AutoBurnTriggered("CRST return - auto-burn check triggered");
     }
     
-    // AUTO-BURN APPROACH 1: Withdraw ETH and burn equivalent CRST tokens
     function withdrawEth(uint256 amountInWei) external onlyOwner {
         require(amountInWei > 0, "Amount must be greater than zero");
         require(beneficiary != address(0), "No beneficiary set");
         require(amountInWei <= address(this).balance, "Insufficient contract ETH balance");
         
-        // AUTO-BURN APPROACH 1: Burn equivalent CRST tokens when withdrawing ETH
         crstToken.burnForEthWithdrawal(amountInWei);
         uint256 tokensBurned = amountInWei * ETH_TO_CRST_RATE;
         
@@ -660,13 +657,11 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
         emit AutoBurnTriggered("ETH withdrawal - burned equivalent CRST");
     }
     
-    // AUTO-BURN APPROACH 1: Withdraw all ETH and burn equivalent CRST tokens
     function withdrawAllEth() external onlyOwner {
         uint256 contractBalance = address(this).balance;
         require(contractBalance > 0, "No ETH to withdraw");
         require(beneficiary != address(0), "No beneficiary set");
         
-        // AUTO-BURN APPROACH 1: Burn equivalent CRST tokens
         crstToken.burnForEthWithdrawal(contractBalance);
         uint256 tokensBurned = contractBalance * ETH_TO_CRST_RATE;
         
@@ -691,9 +686,7 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
         emit TokenFeesWithdrawn(beneficiary, amountInWei, msg.sender);
         emit AutoBurnTriggered("Token fee withdrawal - auto-burn check triggered");
     }
-    
-    // Remove manual trigger function since auto-burn is automatic
-    
+
     // Set beneficiary
     function setBeneficiary(address _beneficiary) external onlyOwner {
         require(_beneficiary != address(0), "Invalid beneficiary address");
@@ -745,9 +738,6 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
         return pendingRequests;
     }
     
-    // Get approved token requests waiting for finalization (REMOVED - no longer needed)
-    // This function is no longer needed since tokens are transferred immediately on approval
-    
     // Get system statistics including supply info
     function getSystemStats() external view returns (
         uint256 totalCourses,
@@ -789,109 +779,6 @@ contract CourseRegistration is ReentrancyGuard, Pausable, Ownable {
     
     function getRequiredEthForTokens(uint256 amountInTokens) external pure returns (uint256) {
         return (amountInTokens * 10**18) / ETH_TO_CRST_RATE;
-    }
-    
-    // Helper function to calculate total fees for multiple courses (CART HELPER)
-    function calculateTotalFeesForCourses(uint256[] calldata courseIds) external view returns (uint256 totalFee, bool allValid, string memory errorMessage) {
-        if (courseIds.length == 0) {
-            return (0, false, "No courses provided");
-        }
-        
-        if (courseIds.length > 10) {
-            return (0, false, "Maximum 10 courses per transaction");
-        }
-        
-        totalFee = 0;
-        
-        for (uint256 i = 0; i < courseIds.length; i++) {
-            uint256 courseId = courseIds[i];
-            
-            // Check if course exists
-            if (courses[courseId].id == 0) {
-                return (0, false, "One or more courses do not exist");
-            }
-            
-            // Check if course is active
-            if (!courses[courseId].isActive) {
-                return (0, false, "One or more courses are inactive");
-            }
-            
-            totalFee += courses[courseId].feeInTokens * 10**18;
-        }
-        
-        return (totalFee, true, "");
-    }
-    
-    // Helper function to check if student can pay for courses (CART VALIDATION)
-    function canStudentPayForCourses(address student, uint256[] calldata courseIds) external view returns (bool canPay, string memory reason, uint256 totalRequired, uint256 studentBalance, uint256 studentAllowance) {
-        // Check if student is active
-        if (!userProfiles[student].isActive || userProfiles[student].role != UserRole.Student) {
-            return (false, "Student not active", 0, 0, 0);
-        }
-        
-        // Calculate total required and validate registrations
-        (uint256 totalFee, bool allValid, string memory errorMsg) = this.calculateTotalFeesForCourses(courseIds);
-        
-        if (!allValid) {
-            return (false, errorMsg, 0, 0, 0);
-        }
-        
-        // Check registrations and payment status
-        for (uint256 i = 0; i < courseIds.length; i++) {
-            uint256 courseId = courseIds[i];
-            
-            if (registrations[student][courseId].student == address(0)) {
-                return (false, "Not registered for all courses", totalFee, 0, 0);
-            }
-            
-            if (registrations[student][courseId].hasPaid) {
-                return (false, "Already paid for some courses", totalFee, 0, 0);
-            }
-        }
-        
-        // Check balances
-        studentBalance = crstToken.balanceOf(student);
-        studentAllowance = crstToken.allowance(student, address(this));
-        
-        if (studentBalance < totalFee) {
-            return (false, "Insufficient CRST balance", totalFee, studentBalance, studentAllowance);
-        }
-        
-        if (studentAllowance < totalFee) {
-            return (false, "Insufficient allowance - please approve more CRST", totalFee, studentBalance, studentAllowance);
-        }
-        
-        return (true, "Ready to pay", totalFee, studentBalance, studentAllowance);
-    }
-    
-    // Get student's unpaid registered courses (for cart display)
-    function getStudentUnpaidCourses(address student) external view returns (uint256[] memory unpaidCourseIds, uint256[] memory fees) {
-        uint256[] memory studentCourseIds = studentCourses[student];
-        uint256 unpaidCount = 0;
-        
-        // Count unpaid courses
-        for (uint256 i = 0; i < studentCourseIds.length; i++) {
-            uint256 courseId = studentCourseIds[i];
-            if (!registrations[student][courseId].hasPaid) {
-                unpaidCount++;
-            }
-        }
-        
-        // Create arrays for unpaid courses
-        unpaidCourseIds = new uint256[](unpaidCount);
-        fees = new uint256[](unpaidCount);
-        uint256 index = 0;
-        
-        for (uint256 i = 0; i < studentCourseIds.length; i++) {
-            uint256 courseId = studentCourseIds[i];
-            if (!registrations[student][courseId].hasPaid) {
-                unpaidCourseIds[index] = courseId;
-                fees[index] = courses[courseId].feeInTokens;
-                index++;
-            }
-        }
-        
-        return (unpaidCourseIds, fees);
     }
     
     // Emergency pause

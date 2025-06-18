@@ -1,4 +1,4 @@
-// login.js - Fixed to force MetaMask popup and match contract functions
+// login.js
 let provider = null;
 let signer = null;
 let connectedAccount = null;
@@ -72,7 +72,7 @@ async function connectMetaMask() {
     
     try {
         if (btn) {
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Connecting...';
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Connecting';
             btn.disabled = true;
         }
         
@@ -90,7 +90,7 @@ async function connectMetaMask() {
         
         console.log('Ethers.js loaded');
         
-        // Step 3: FORCE MetaMask to show account selection popup
+        // Step 3: Force MetaMask to show account selection popup
         console.log('Forcing MetaMask account selection');
         
         // First disconnect any existing connections
@@ -120,7 +120,7 @@ async function connectMetaMask() {
         console.log('Accounts received:', accountsList);
         
         // Step 4: Create provider
-        console.log('Creating ethers provider...');
+        console.log('Creating ethers provider');
         provider = new ethers.providers.Web3Provider(window.ethereum);
         
         // Step 5: Get signer and account
@@ -177,7 +177,7 @@ async function connectMetaMask() {
             }
         }
         
-        // Step 7: Try to initialize contracts (but don't fail if it doesn't work)
+        // Step 7: Try to initialize contracts
         await initializeContractsWithEthers();
         
         // Step 8: Handle wallet authentication
@@ -190,13 +190,13 @@ async function connectMetaMask() {
         
         // Handle specific error types
         if (error.code === 4001) {
-            errorMessage = 'Connection request was rejected. Please try again and accept the connection request.';
+            errorMessage = 'Connection request was rejected. Try again and accept the connection request.';
         } else if (error.code === -32002) {
-            errorMessage = 'Connection request is already pending. Please check MetaMask and accept the connection.';
+            errorMessage = 'Connection request is already pending. Check MetaMask and accept the connection.';
         } else if (error.message.includes('JSON-RPC')) {
-            errorMessage = 'Network connection error. Please ensure your local blockchain is running on http://127.0.0.1:8545';
+            errorMessage = 'Network connection error. Ensure local blockchain is running on http://127.0.0.1:8545';
         } else if (error.message.includes('wallet_requestPermissions')) {
-            errorMessage = 'Permission request failed. Please try connecting manually through MetaMask.';
+            errorMessage = 'Permission request failed. Try connecting manually through MetaMask.';
         }
         
         showMessage(errorMessage, 'error');
@@ -211,7 +211,6 @@ async function connectMetaMask() {
 
 async function initializeContractsWithEthers() {
 
-    // Skip if CONTRACT_CONFIG is not available
     if (typeof CONTRACT_CONFIG === 'undefined') {
         console.warn('CONTRACT_CONFIG not available - contracts will not be initialized');
         return;
@@ -223,10 +222,9 @@ async function initializeContractsWithEthers() {
     }
     
     try {
-        console.log('Initializing contracts...');
+        console.log('Initializing contracts');
         console.log('Contract address:', CONTRACT_CONFIG.ADDRESSES.COURSE_REGISTRATION);
         
-        // Test with a simple call
 
         // Initialize contracts with ethers.js
         courseRegistrationContract = new ethers.Contract(
@@ -252,19 +250,18 @@ async function initializeContractsWithEthers() {
         window.courseRegistrationContract = courseRegistrationContract;
         window.crstTokenContract = crstTokenContract;
         
-        // Test contract connection with a simple read call instead of getCode
+        // Test contract connection
         try {
-            console.log('Testing contract connection...');
+            console.log('Testing contract connection');
             const owner = await courseRegistrationContract.owner();
             console.log('Contract connection test successful. Owner:', owner);
-            console.log('Blockchain integration is working!');
         } catch (testError) {
-            console.warn('⚠️ Contract connection test failed:', testError.message);
+            console.warn('Contract connection test failed:', testError.message);
             // If the owner() call fails, the contract probably doesn't exist
             if (testError.message.includes('revert') || testError.message.includes('call exception')) {
                 console.warn('Contract seems to exist but call failed - continuing with blockchain mode');
             } else {
-                console.warn('Contract probably doesn\'t exist - falling back to demo mode');
+                console.warn('Contract doesn\'t exist');
                 courseRegistrationContract = null;
                 crstTokenContract = null;
             }
@@ -274,10 +271,9 @@ async function initializeContractsWithEthers() {
         console.warn('Contract initialization failed:', contractError.message);
         courseRegistrationContract = null;
         crstTokenContract = null;
-        
-        console.log('Demo mode, no blockchain');
     }
 }
+
 
 async function registerAsStudent() {
     if (isProcessing) return;
@@ -295,11 +291,11 @@ async function registerAsStudent() {
         if (courseRegistrationContract) {
             try {
                 // Test the contract connection first
-                console.log('Testing contract connection...');
+                console.log('Testing contract connection.');
                 const owner = await courseRegistrationContract.owner();
                 console.log('Contract owner:', owner);
                 
-                showRegistrationMessage('⏳ Please confirm the transaction in MetaMask', 'info');
+                showRegistrationMessage('Please confirm the transaction in MetaMask', 'info');
                 
                 // Try the registration transaction
                 const tx = await courseRegistrationContract.registerAsStudent({
@@ -320,31 +316,30 @@ async function registerAsStudent() {
                 }, 1000);
                 
             } catch (contractError) {
-                console.error('❌ Contract call failed:', contractError);
+                console.error('Contract call failed:', contractError);
                 
                 if (contractError.code === 4001) {
-                    showRegistrationMessage('❌ Transaction cancelled by user', 'error');
+                    showRegistrationMessage('Transaction cancelled by user', 'error');
                 } else if (contractError.message && contractError.message.includes('User already registered')) {
-                    console.log('✅ User already registered, proceeding...');
-                    showRegistrationMessage('✅ Already registered! Redirecting to student portal...', 'success');
+                    showRegistrationMessage('Already registered! Redirecting to student portal', 'success');
                     createSessionAndRedirect(connectedAccount, 'student', true, false);
                     return;
                 } else {
-                    showRegistrationMessage('❌ Registration failed: ' + contractError.message, 'error');
+                    showRegistrationMessage('Registration failed: ' + contractError.message, 'error');
                 }
             }
         } else {
             // Demo mode
-            showRegistrationMessage('ℹ️ Demo mode: Simulating student registration...', 'info');
+            showRegistrationMessage('Demo mode: Simulating student registration', 'info');
             setTimeout(() => {
-                showRegistrationMessage('✅ Demo registration successful! Redirecting...', 'success');
+                showRegistrationMessage('Demo registration successful! Redirecting', 'success');
                 createSessionAndRedirect(connectedAccount, 'student', true, false);
             }, 2000);
         }
         
     } catch (error) {
-        console.error('❌ Student registration failed:', error);
-        showRegistrationMessage('❌ Registration failed: ' + error.message, 'error');
+        console.error('Student registration failed:', error);
+        showRegistrationMessage('Registration failed: ' + error.message, 'error');
         
         // Re-enable buttons on error
         const studentRegisterBtn = document.querySelector('.btn-student-register');
@@ -357,7 +352,6 @@ async function registerAsStudent() {
     }
 }
 
-// Also update the handleWalletAuthentication function to better handle RPC errors:
 async function handleWalletAuthentication(account) {
     try {
         let userRole = 'student';
@@ -370,20 +364,19 @@ async function handleWalletAuthentication(account) {
             return;
         }
         
-        // Check if user is registered (only if contracts are available and working)
+        // Check if user is registered
         if (courseRegistrationContract) {
             try {
-                console.log('🔍 Checking user registration...');
+                console.log('Checking user registration');
                 
                 // Test contract connection first
                 await courseRegistrationContract.owner();
                 console.log('Contract connection confirmed');
                 
-                // FIXED: Use userProfiles mapping directly instead of getUserProfile function
-                console.log('📋 Checking user profile...');
+                console.log('Checking user profile');
                 const profile = await courseRegistrationContract.userProfiles(account);
                 
-                console.log('📋 Profile data:', {
+                console.log('Profile data:', {
                     walletAddress: profile.walletAddress,
                     role: profile.role.toString(),
                     isActive: profile.isActive,
@@ -394,26 +387,26 @@ async function handleWalletAuthentication(account) {
                 if (profile.isActive && profile.walletAddress !== '0x0000000000000000000000000000000000000000') {
                     // profile.role: 0 = Student, 1 = Admin
                     const role = profile.role.toString() === '0' ? 'student' : 'admin';
-                    console.log('👤 Existing user found with role:', role);
-                    console.log('📅 Registered at:', new Date(profile.registeredAt.toNumber() * 1000).toLocaleString());
+                    console.log('Existing user found with role:', role);
+                    console.log('Registered at:', new Date(profile.registeredAt.toNumber() * 1000).toLocaleString());
                     
-                    showMessage(`Welcome back! Redirecting to ${role} portal...`, 'success');
+                    showMessage(`Welcome back! Redirecting to ${role} portal`, 'success');
                     createSessionAndRedirect(account, role, false, false);
                     return;
                 } else {
-                    console.log('📝 User profile not found or not active');
+                    console.log('User profile not found or not active');
                 }
                 
             } catch (profileError) {
-                console.log('📝 User profile check failed:', profileError.message);
+                console.log('User profile check failed:', profileError.message);
                 
                 // If it's a revert error, the user probably doesn't exist
                 if (profileError.message.includes('revert') || profileError.message.includes('call exception')) {
-                    console.log('📝 User not registered in contract - showing registration options');
+                    console.log('User not registered in contract - showing registration options');
                 } else if (profileError.code === -32603 || profileError.message.includes('JSON-RPC')) {
-                    console.log('⚠️ RPC error during profile check - registration will use demo mode');
+                    console.log('RPC error during profile check - registration will use demo mode');
                 } else {
-                    console.warn('⚠️ Unexpected error during profile check:', profileError);
+                    console.warn('Unexpected error during profile check:', profileError);
                 }
             }
         }
@@ -455,7 +448,7 @@ async function testContractCall(contractCallFunction, maxRetries = 3) {
                 error.message.includes('too many requests') ||
                 error.code === -32603
             )) {
-                console.warn(`⚠️ MetaMask circuit breaker detected, attempt ${attempt}/${maxRetries}`);
+                console.warn(`MetaMask circuit breaker detected, attempt ${attempt}/${maxRetries}`);
                 
                 if (attempt < maxRetries) {
                     // Wait 2 seconds before retrying
@@ -474,7 +467,7 @@ async function testContractCall(contractCallFunction, maxRetries = 3) {
 
 /**
  * Check if a user is registered and active in the smart contract
- * Add this helper function to login.js
+ * helper function
  */
 async function checkUserProfile(walletAddress) {
     try {
@@ -482,7 +475,7 @@ async function checkUserProfile(walletAddress) {
             return { isRegistered: false, role: 'unknown', isActive: false, profile: null };
         }
         
-        // Get user profile from contract with circuit breaker handling
+        // Get user profile from contract
         const profile = await testContractCall(async () => {
             return await courseRegistrationContract.userProfiles(walletAddress);
         });
@@ -522,44 +515,43 @@ async function requestAdminAccess() {
         if (studentRegBtn) studentRegBtn.disabled = true;
         if (adminReqBtn) adminReqBtn.disabled = true;
         
-        showRegistrationMessage('👨‍💼 Requesting admin access...', 'info');
+        showRegistrationMessage('Requesting admin access', 'info');
         
         if (courseRegistrationContract) {
-            showRegistrationMessage('⏳ Please confirm the transaction in MetaMask...', 'info');
+            showRegistrationMessage('Please confirm the transaction in MetaMask', 'info');
             
             const tx = await courseRegistrationContract.requestAdminAccess({
                 gasLimit: 300000
             });
             
-            console.log('⏳ Transaction sent:', tx.hash);
-            showRegistrationMessage('⏳ Transaction sent! Waiting for confirmation...', 'info');
+            console.log('Transaction sent:', tx.hash);
+            showRegistrationMessage('Transaction sent! Waiting for confirmation', 'info');
             
             const receipt = await tx.wait();
-            console.log('✅ Admin access request submitted:', receipt.transactionHash);
-            showRegistrationMessage('⏳ Admin access requested! An admin will review your request.', 'warning');
+            console.log('Admin access request submitted:', receipt.transactionHash);
+            showRegistrationMessage('An admin will review your request.', 'warning');
             
-            // Don't auto-redirect for admin requests - they need approval
+            // No auto-redirect for admin requests - they need approval
             setTimeout(() => {
-                showRegistrationMessage('ℹ️ Your admin request is pending approval. Check back later.', 'info');
+                showRegistrationMessage('Your admin request is pending approval. Check back later.', 'info');
             }, 3000);
-            
         } else {
             // Demo mode
-            showRegistrationMessage('ℹ️ Demo mode: Simulating admin request...', 'warning');
+            showRegistrationMessage('ℹDemo mode: Simulating admin request', 'warning');
             
             setTimeout(() => {
-                showRegistrationMessage('✅ Demo admin access approved! Redirecting...', 'success');
+                showRegistrationMessage('Demo admin access approved! Redirecting', 'success');
                 createSessionAndRedirect(connectedAccount, 'admin', true, false);
             }, 3000);
         }
         
     } catch (error) {
-        console.error('❌ Admin request failed:', error);
+        console.error('Admin request failed:', error);
         
         if (error.code === 4001) {
-            showRegistrationMessage('❌ Transaction cancelled by user', 'error');
+            showRegistrationMessage('Transaction cancelled by user', 'error');
         } else {
-            showRegistrationMessage('❌ Admin request failed: ' + error.message, 'error');
+            showRegistrationMessage('Admin request failed: ' + error.message, 'error');
         }
         
         // Re-enable buttons on error
@@ -603,16 +595,13 @@ async function forceReconnect() {
                     <p class="text-muted">Click the button above to connect with a different account</p>
                 </div>
             `;
-        }
-        
-        console.log('🔄 Ready to reconnect with different account');
-        
+        }        
     } catch (error) {
         console.error('Error during force reconnect:', error);
     }
 }
 
-// Storage and utility functions (same as before but with better error handling)
+// Storage and utility functions
 function getStoredSession() {
     try {
         return localStorage.getItem('user');
@@ -642,14 +631,14 @@ function removeStoredSession() {
 }
 
 function redirectToRole(role) {
-    console.log('🔄 Redirecting to:', role, 'portal');
+    console.log('Redirecting to:', role, 'portal');
     
     if (role === 'admin' && window.location.pathname.includes('adminportal.html')) {
-        console.log('✅ Already on admin portal');
+        console.log('Already on admin portal');
         return;
     }
     if (role === 'student' && window.location.pathname.includes('studentportal.html')) {
-        console.log('✅ Already on student portal');
+        console.log('Already on student portal');
         return;
     }
     
@@ -666,24 +655,24 @@ function checkExistingSession() {
         try {
             const session = JSON.parse(storedUser);
             if (session.walletAddress && session.role) {
-                console.log('✅ Valid session found:', session.email);
+                console.log('alid session found:', session.email);
                 return session;
             }
         } catch (e) {
-            console.log('❌ Invalid session, clearing');
+            console.log('Invalid session, clearing');
             removeStoredSession();
         }
     }
     
-    console.log('❌ No valid session, redirecting to login');
+    console.log('No valid session, redirecting to login');
     window.location.href = 'login.html';
     return null;
 }
 
 function createSessionAndRedirect(account, role, isNewUser, isOwner) {
-    const accountTypeMessage = isOwner ? '👑 Contract Owner detected! Redirecting to Admin Portal...' :
-                             role === 'admin' ? '👨‍💼 Admin account detected! Redirecting to Admin Portal...' :
-                             '👨‍🎓 Student account detected! Redirecting to Student Portal...';
+    const accountTypeMessage = isOwner ? 'Contract Owner detected! Redirecting to Admin Portal' :
+                             role === 'admin' ? 'Admin account detected! Redirecting to Admin Portal' :
+                             'Student account detected! Redirecting to Student Portal.';
     
     showMessage(accountTypeMessage, 'success');
     
@@ -698,7 +687,7 @@ function createSessionAndRedirect(account, role, isNewUser, isOwner) {
     };
     
     setStoredSession(JSON.stringify(userSession));
-    console.log('💾 Session created:', userSession);
+    console.log('Session created:', userSession);
     
     if (!sessionStorage.getItem('loginRedirecting')) {
         sessionStorage.setItem('loginRedirecting', 'true');
@@ -714,7 +703,7 @@ function showWalletConnected(address) {
     const addressSpan = document.getElementById('connected-address');
     
     if (statusDiv && addressSpan) {
-        const shortAddress = `${address.slice(0, 8)}...${address.slice(-6)}`;
+        const shortAddress = `${address.slice(0, 8)}${address.slice(-6)}`;
         addressSpan.textContent = shortAddress;
         addressSpan.title = address;
         statusDiv.classList.remove('d-none');
@@ -728,8 +717,8 @@ function showRegistrationOptions(account) {
     }
     
     const blockchainStatus = courseRegistrationContract ? 
-        '🔗 Blockchain Connected' : 
-        'ℹ️ Demo Mode (No Blockchain)';
+        'Blockchain Connected' : 
+        'No Blockchain';
     
     showMessage(`Wallet connected! ${blockchainStatus}`, 'info');
     
@@ -830,7 +819,7 @@ function showRegistrationMessage(message, type) {
 function verifySession() {
     const storedUser = getStoredSession();
     if (!storedUser) {
-        console.log('❌ No session found, redirecting to login');
+        console.log('No session found, redirecting to login');
         window.location.href = 'login.html';
         return false;
     }
@@ -838,27 +827,27 @@ function verifySession() {
     try {
         const session = JSON.parse(storedUser);
         if (!session.walletAddress || !session.email) {
-            console.log('❌ Invalid session data, redirecting to login');
+            console.log('Invalid session data, redirecting to login');
             removeStoredSession();
             window.location.href = 'login.html';
             return false;
         }
         
-        console.log('✅ Session verified for:', session.email);
+        console.log('Session verified for:', session.email);
         
         const userEmail = document.getElementById('user-email');
         if (userEmail) userEmail.textContent = session.email;
         
         const walletAddress = document.getElementById('wallet-address');
         if (walletAddress) {
-            const shortAddress = `${session.walletAddress.slice(0, 6)}...${session.walletAddress.slice(-4)}`;
+            const shortAddress = `${session.walletAddress.slice(0, 6)}${session.walletAddress.slice(-4)}`;
             walletAddress.textContent = shortAddress;
             walletAddress.title = session.walletAddress;
         }
         
         return session;
     } catch (e) {
-        console.log('❌ Error parsing session, redirecting to login');
+        console.log('Error parsing session, redirecting to login');
         removeStoredSession();
         window.location.href = 'login.html';
         return false;
@@ -866,9 +855,8 @@ function verifySession() {
 }
 
 function logout() {
-    console.log('🚪 Logging out user...');
+    console.log('🚪 Logging out user');
     removeStoredSession();
-    console.log('🔄 Redirecting to login page...');
     window.location.href = 'login.html';
 }
 

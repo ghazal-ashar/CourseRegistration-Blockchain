@@ -1,4 +1,4 @@
-// scripts/deploy.js - Enhanced with block generation for MetaMask compatibility
+// scripts/deploy.js 
 const { ethers } = require("hardhat");
 const fs = require("fs");
 const path = require("path");
@@ -53,7 +53,7 @@ async function main() {
     const transferTokensTx = await crstToken.transfer(registrationAddress, initialBalance);
     await transferTokensTx.wait();
 
-    console.log(`✅ Transferred ${ethers.formatEther(initialBalance)} CRST tokens to CourseRegistration contract!`);
+    console.log(`Transferred ${ethers.formatEther(initialBalance)} CRST tokens to CourseRegistration contract!`);
 
     // Verify the transfer
     const contractBalance = await crstToken.balanceOf(registrationAddress);
@@ -63,7 +63,7 @@ async function main() {
 
     
     // Generate more blocks after deployment
-    console.log("\n🔧 Generating post-deployment blocks...");
+    console.log("\n🔧 Generating post-deployment blocks");
     for (let i = 0; i < 10; i++) {
         await deployer.sendTransaction({
             to: deployer.address,
@@ -73,10 +73,10 @@ async function main() {
     }
     
     const finalBlock = await ethers.provider.getBlockNumber();
-    console.log(`✅ Final block number: ${finalBlock}`);
+    console.log(`Final block number: ${finalBlock}`);
     
     // AUTO-GENERATE CONFIG.JS FILE
-    console.log("\n🔧 Auto-generating config.js...");
+    console.log("\nAuto-generating config.js...");
     
     try {
         const crstTokenArtifact = JSON.parse(
@@ -110,11 +110,10 @@ async function main() {
         const configPath = path.join(__dirname, '../frontend/scripts/config.js');
         fs.writeFileSync(configPath, configContent);
         
-        console.log("✅ Config.js updated successfully!");
+        console.log("Config.js updated successfully!");
         
     } catch (error) {
-        console.log("❌ Config generation failed:", error.message);
-        console.log("📋 Manual config needed:");
+        console.log("Config generation failed (manual needed):", error.message);
         console.log(`CRST_TOKEN: '${tokenAddress}'`);
         console.log(`COURSE_REGISTRATION: '${registrationAddress}'`);
     }

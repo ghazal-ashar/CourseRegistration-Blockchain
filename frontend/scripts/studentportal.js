@@ -38,7 +38,7 @@ let contractConstants = {
 
 // 2. CIRCUIT BREAKER & ERROR HANDLING
 
-/**
+/*
  * Test contract connection with retry logic for MetaMask circuit breaker
  * This handles MetaMask's circuit breaker issue by retrying failed calls
  */
@@ -54,7 +54,7 @@ async function testContractCall(contractCallFunction, maxRetries = 3) {
                 error.message.includes('too many requests') ||
                 error.code === -32603
             )) {
-                console.warn(`⚠️ MetaMask circuit breaker detected, attempt ${attempt}/${maxRetries}`);
+                console.warn(`MetaMask circuit breaker detected, attempt ${attempt}/${maxRetries}`);
                 
                 if (attempt < maxRetries) {
                     // Wait 2 seconds before retrying
@@ -73,7 +73,7 @@ async function testContractCall(contractCallFunction, maxRetries = 3) {
 
 // 3. INITIALIZATION & STARTUP
 
-/**
+/*
  * Main initialization function - runs when page loads
  * Sets up the entire student portal including blockchain connections and UI
  */
@@ -86,17 +86,17 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Prevent multiple initializations with DOM flag
     if (document.body.dataset.studentInit === 'true') {
-        console.log('⚠️ Student portal already initializing, skipping...');
+        console.log('Student portal already initializing, skipping.');
         return;
     }
     document.body.dataset.studentInit = 'true';
     
-    console.log('🚀 Initializing Student Portal v2.0...');
+    console.log('🚀 Initializing Student Portal v2.0.');
     
     // Check for redirect loops
     const redirectCount = parseInt(sessionStorage.getItem('studentRedirectCount') || '0');
     if (redirectCount > 3) {
-        console.error('❌ Too many redirects detected, clearing session');
+        console.error('Too many redirects detected, clearing session');
         removeStoredSession();
         sessionStorage.removeItem('studentRedirectCount');
         showMessage('Multiple redirects detected. Please login again.', 'error');
@@ -108,7 +108,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Verify student session first
     if (!verifyStudentSession()) {
-        console.log('❌ Student session verification failed, stopping initialization');
+        console.log('Student session verification failed.');
         sessionStorage.setItem('studentRedirectCount', (redirectCount + 1).toString());
         return;
     }
@@ -123,26 +123,23 @@ document.addEventListener('DOMContentLoaded', function() {
         setupEventMonitoring();     // Setup real-time event monitoring
         startPeriodicRefresh();     // Start auto-refresh timer
         isInitialized = true;
-        console.log('✅ Student Portal v2.0 initialized successfully');
     }).catch(error => {
-        console.error('❌ Failed to initialize student portal:', error);
-        showMessage('Failed to connect to blockchain. Please check your connection and refresh.', 'error');
+        console.error('Failed to initialize student portal:', error);
+        showMessage('Failed to connect to blockchain. Please check connection and refresh.', 'error');
     });
 });
 
-/**
+/*
  * Verify student session using login.js session system
  * This checks if the user has valid student credentials
  */
 function verifyStudentSession() {
-    try {
-        console.log('🔍 Checking student session...');
-        
+    try {        
         // Get stored session from localStorage/sessionStorage
         const storedUser = getStoredSession();
         if (!storedUser) {
-            console.log('❌ No session found');
-            showMessage('No active session. Redirecting to login...', 'error');
+            console.log('No session found');
+            showMessage('No active session. Redirecting to login.', 'error');
             setTimeout(() => {
                 window.location.href = 'login.html';
             }, 1500);
@@ -153,7 +150,7 @@ function verifyStudentSession() {
         try {
             userSession = JSON.parse(storedUser);
         } catch (e) {
-            console.log('❌ Invalid session JSON, clearing and redirecting');
+            console.log('Invalid session JSON, clearing and redirecting');
             removeStoredSession();
             setTimeout(() => {
                 window.location.href = 'login.html';
@@ -163,7 +160,7 @@ function verifyStudentSession() {
         
         // Validate session data
         if (!userSession.walletAddress || !userSession.role) {
-            console.log('❌ Invalid session data:', userSession);
+            console.log('Invalid session data:', userSession);
             removeStoredSession();
             setTimeout(() => {
                 window.location.href = 'login.html';
@@ -173,7 +170,7 @@ function verifyStudentSession() {
         
         // Check if user has student role (redirecting admins to admin portal)
         if (userSession.role === 'admin') {
-            console.log('👨‍💼 Admin detected, redirecting to admin portal');
+            console.log('Admin detected, redirecting to admin portal');
             setTimeout(() => {
                 window.location.href = 'adminportal.html';
             }, 1500);
@@ -182,7 +179,7 @@ function verifyStudentSession() {
         
         // Verify this is actually a student
         if (userSession.role !== 'student') {
-            console.log('❌ User is not a student. Role:', userSession.role);
+            console.log('User is not a student. Role:', userSession.role);
             showMessage('Access denied. Student role required.', 'error');
             setTimeout(() => {
                 window.location.href = 'login.html';
@@ -190,13 +187,13 @@ function verifyStudentSession() {
             return false;
         }
         
-        console.log('✅ Valid student session found:', userSession.email || userSession.walletAddress);
+        console.log('Valid student session found:', userSession.email || userSession.walletAddress);
         updateUserUI();
         return true;
         
     } catch (error) {
-        console.error('❌ Session verification failed:', error);
-        showMessage('Session verification error. Redirecting to login...', 'error');
+        console.error('Session verification failed:', error);
+        showMessage('Session verification error. Redirecting to login.', 'error');
         removeStoredSession();
         setTimeout(() => {
             window.location.href = 'login.html';
@@ -207,7 +204,7 @@ function verifyStudentSession() {
 
 // 4. SESSION MANAGEMENT HELPERS
 
-/**
+/*
  * Get stored session from localStorage (with fallback to sessionStorage)
  * This matches the behavior in login.js
  */
@@ -220,7 +217,7 @@ function getStoredSession() {
     }
 }
 
-/**
+/*
  * Remove stored session data (used during logout)
  * This matches the cleanup behavior in login.js
  */
@@ -236,7 +233,7 @@ function removeStoredSession() {
 
 // 5. BLOCKCHAIN INTEGRATION
 
-/**
+/*
  * Initialize blockchain contracts using existing connection from login.js
  * This reuses the connection instead of creating a new one
  */
@@ -249,12 +246,11 @@ async function initializeContracts() {
     try {
         // FIRST: Try to reuse existing connection from login.js (like adminportal.js)
         if (typeof window.provider !== 'undefined' && window.provider) {
-            console.log('🔄 Reusing existing blockchain connection from login...');
-            // Use global variables directly (no assignment needed)
+            console.log('Reusing existing blockchain connection from login');
             
             // Try to reuse contracts if they exist
             if (window.courseRegistrationContract && window.crstTokenContract) {
-                console.log('📦 Reusing existing contract instances...');
+                console.log('Reusing existing contract instances');
                 
                 // Test the existing contracts with circuit breaker handling
                 try {
@@ -263,20 +259,19 @@ async function initializeContracts() {
                         const symbol = await crstTokenContract.symbol();
                         return { owner, symbol };
                     });
-                    console.log('✅ Reused contracts working with circuit breaker protection');
-                    updateBlockchainStatus('✅ Blockchain Connected (Reused)');
+                    console.log('Reused contracts working with circuit breaker protection');
+                    updateBlockchainStatus('Blockchain Connected (Reused)');
                     await loadContractConstants();
                     await verifyStudentRegistration();
                     return;
                 } catch (testError) {
-                    console.warn('⚠️ Existing contracts failed, will recreate...', testError.message);
+                    console.warn('Existing contracts failed, will recreate.', testError.message);
                 }
             }
         }
         
-        // SECOND: Connect to MetaMask if no existing connection (like adminportal.js)
+        // SECOND: Connect to MetaMask if no existing connection 
         if (typeof window.ethereum !== 'undefined') {
-            console.log('🔌 Creating new blockchain connection...');
             provider = new ethers.providers.Web3Provider(window.ethereum);
             signer = provider.getSigner();
             
@@ -284,10 +279,10 @@ async function initializeContracts() {
             window.provider = provider;
             window.signer = signer;
             
-            // Verify we're connected to the right account
+            // Verify  connected to the right account
             const connectedAddress = await signer.getAddress();
             if (connectedAddress.toLowerCase() !== userSession.walletAddress.toLowerCase()) {
-                console.warn('⚠️ MetaMask account mismatch:', {
+                console.warn('MetaMask account mismatch:', {
                     session: userSession.walletAddress,
                     metamask: connectedAddress
                 });
@@ -303,7 +298,7 @@ async function initializeContracts() {
                 throw new Error('Contract addresses not configured in CONTRACT_CONFIG');
             }
             
-            console.log('🔧 Initializing contracts with addresses:', {
+            console.log('Initializing contracts with addresses:', {
                 courseRegistration: CONTRACT_CONFIG.ADDRESSES.COURSE_REGISTRATION,
                 crstToken: CONTRACT_CONFIG.ADDRESSES.CRST_TOKEN
             });
@@ -325,33 +320,31 @@ async function initializeContracts() {
             window.courseRegistrationContract = courseRegistrationContract;
             window.crstTokenContract = crstTokenContract;
             
-            // Test contract connections with circuit breaker handling
-            console.log('🧪 Testing contract connections...');
-            
+            // Test contract connections with circuit breaker handling            
             try {
                 await testContractCall(async () => {
                     const owner = await courseRegistrationContract.owner();
-                    console.log('✅ CourseRegistration contract owner:', owner);
+                    console.log('CourseRegistration contract owner:', owner);
                     return owner;
                 });
             } catch (ownerError) {
-                console.error('❌ CourseRegistration contract test failed:', ownerError.message);
+                console.error('CourseRegistration contract test failed:', ownerError.message);
                 throw new Error(`CourseRegistration contract not deployed or wrong address. Error: ${ownerError.message}`);
             }
             
             try {
                 await testContractCall(async () => {
                     const symbol = await crstTokenContract.symbol();
-                    console.log('✅ CRST token symbol:', symbol);
+                    console.log('CRST token symbol:', symbol);
                     return symbol;
                 });
             } catch (symbolError) {
-                console.error('❌ CRST token contract test failed:', symbolError.message);
+                console.error('CRST token contract test failed:', symbolError.message);
                 throw new Error(`CRST token contract not deployed or wrong address. Error: ${symbolError.message}`);
             }
             
-            console.log('✅ Contracts initialized successfully with circuit breaker protection');
-            updateBlockchainStatus('✅ Blockchain Connected');
+            console.log('Contracts initialized successfully with circuit breaker protection');
+            updateBlockchainStatus('Blockchain Connected');
             
             // Load contract constants dynamically
             await loadContractConstants();
@@ -363,29 +356,29 @@ async function initializeContracts() {
             throw new Error('MetaMask not found');
         }
     } catch (error) {
-        console.error('❌ Contract initialization failed:', error);
+        console.error('Contract initialization failed:', error);
         
-        let statusMessage = '❌ Connection Failed';
+        let statusMessage = 'Connection Failed';
         let userMessage = 'Blockchain connection failed.';
         
         // Provide specific error messages for common issues (like adminportal.js)
         if (error.message.includes('MetaMask is temporarily overloaded')) {
-            statusMessage = '❌ MetaMask Overloaded';
+            statusMessage = 'MetaMask Overloaded';
             userMessage = 'MetaMask is temporarily overloaded. Please wait a moment and try refreshing the page.';
         } else if (error.message.includes('circuit breaker')) {
-            statusMessage = '❌ Rate Limited';
+            statusMessage = 'Rate Limited';
             userMessage = 'MetaMask rate limit hit. Please wait a moment and try again.';
         } else if (error.message.includes('invalid block tag')) {
-            statusMessage = '❌ Blockchain Out of Sync';
+            statusMessage = 'Blockchain Out of Sync';
             userMessage = 'Your local blockchain is out of sync. Please restart your blockchain and redeploy contracts.';
         } else if (error.message.includes('not deployed')) {
-            statusMessage = '❌ Contracts Not Deployed';
+            statusMessage = 'Contracts Not Deployed';
             userMessage = 'Smart contracts not found. Please deploy contracts to your local blockchain.';
         } else if (error.message.includes('wrong address')) {
-            statusMessage = '❌ Wrong Contract Address';
+            statusMessage = 'Wrong Contract Address';
             userMessage = 'Contract addresses in config.js are incorrect. Please update after redeploying.';
         } else if (error.message.includes('JSON-RPC')) {
-            statusMessage = '❌ RPC Connection Failed';
+            statusMessage = 'RPC Connection Failed';
             userMessage = 'Cannot connect to blockchain. Make sure your local blockchain is running on http://127.0.0.1:8545';
         }
         
@@ -395,13 +388,13 @@ async function initializeContracts() {
     }
 }
 
-/**
+/*
  * Load contract constants dynamically from smart contracts
  * This replaces hardcoded values with actual contract values
  */
 async function loadContractConstants() {
     try {
-        console.log('🔧 Loading contract constants...');
+        console.log('Loading contract constants.');
         
         if (courseRegistrationContract && crstTokenContract) {
             // Try to fetch contract constants with circuit breaker handling
@@ -420,10 +413,10 @@ async function loadContractConstants() {
                     returnFeePercent: constants.returnFeePercent.toString()
                 };
                 
-                console.log('✅ Contract constants loaded:', contractConstants);
+                console.log('Contract constants loaded:', contractConstants);
                 
             } catch (error) {
-                console.warn('⚠️ Could not fetch contract constants, using fallback values:', error.message);
+                console.warn('Could not fetch contract constants, using fallback values:', error.message);
                 // Keep default fallback values if contract doesn't expose these constants
                 contractConstants = {
                     exchangeRate: '1000',
@@ -434,7 +427,7 @@ async function loadContractConstants() {
         }
         
     } catch (error) {
-        console.error('❌ Failed to load contract constants:', error);
+        console.error('Failed to load contract constants:', error);
         // Use fallback values
         contractConstants = {
             exchangeRate: '1000',
@@ -444,7 +437,7 @@ async function loadContractConstants() {
     }
 }
 
-/**
+/*
  * Verify student registration on the smart contract
  * This checks if the connected wallet is registered as a student
  */
@@ -461,33 +454,33 @@ async function verifyStudentRegistration() {
             const isActive = userProfile.isActive;
             const role = userProfile.role.toString(); // UserRole.Student = 0, UserRole.Admin = 1
             
-            console.log('✅ Student profile verification:', { 
+            console.log('Student profile verification:', { 
                 isActive, 
                 role: role === '0' ? 'Student' : 'Admin',
-                walletAddress: walletAddress.slice(0, 6) + '...' + walletAddress.slice(-4)
+                walletAddress: walletAddress.slice(0, 6) + '.' + walletAddress.slice(-4)
             });
             
             if (!isActive) {
-                console.warn('⚠️ Student is not active in smart contract');
+                console.warn('Student is not active in smart contract');
                 showMessage('Warning: Your account is not active on the blockchain. You may need to register again.', 'warning');
             } else if (role !== '0') {
-                console.warn('⚠️ User role mismatch - expected student but got admin');
-                showMessage('Role mismatch detected. Redirecting to appropriate portal...', 'info');
+                console.warn('User role mismatch - expected student but got admin');
+                showMessage('Role mismatch detected. Redirecting to appropriate portal.', 'info');
                 setTimeout(() => {
                     window.location.href = 'adminportal.html';
                 }, 2000);
                 return;
             } else {
-                console.log('✅ Student registration verified on blockchain');
+                console.log('Student registration verified on blockchain');
             }
             
         } catch (error) {
-            console.log('📝 No user profile found in contract or verification failed:', error.message);
+            console.log('No user profile found in contract or verification failed:', error.message);
             showMessage('Warning: Blockchain registration not verified. Some functions may be limited.', 'warning');
         }
         
     } catch (error) {
-        console.error('❌ Student registration verification failed:', error);
+        console.error('Student registration verification failed:', error);
         if (error.message.includes('MetaMask is temporarily overloaded')) {
             showMessage('MetaMask overloaded during verification. Some functions may be limited.', 'warning');
         } else {
@@ -498,7 +491,7 @@ async function verifyStudentRegistration() {
 
 // 6. REAL-TIME EVENT MONITORING
 
-/**
+/*
  * Setup real-time event monitoring for blockchain events
  * This listens for contract events and updates the UI automatically
  */
@@ -528,7 +521,7 @@ function setupEventMonitoring() {
     }
 }
 
-/**
+/*
  * Handle blockchain events from course registration contract
  */
 function handleBlockchainEvent(event) {
@@ -645,7 +638,7 @@ function handleBlockchainEvent(event) {
     }
 }
 
-/**
+/*
  * Handle token contract events
  * This processes token-related events like transfers and minting
  */
@@ -664,13 +657,13 @@ function handleTokenEvent(event) {
                 if (args.to.toLowerCase() === currentUserAddress) {
                     const amount = parseFloat(ethers.utils.formatEther(args.value)).toFixed(2);
                     const fromAddress = args.from === '0x0000000000000000000000000000000000000000' ? 'Contract' : 
-                                       args.from.slice(0, 6) + '...' + args.from.slice(-4);
+                                       args.from.slice(0, 6) + '.' + args.from.slice(-4);
                     addEventToUI('Token Transfer', `Received ${amount} CRST from ${fromAddress}`, 'success');
                     // Refresh balance
                     loadBalances().then(() => updateBalanceDisplays());
                 } else if (args.from.toLowerCase() === currentUserAddress) {
                     const amount = parseFloat(ethers.utils.formatEther(args.value)).toFixed(2);
-                    const toAddress = args.to.slice(0, 6) + '...' + args.to.slice(-4);
+                    const toAddress = args.to.slice(0, 6) + '.' + args.to.slice(-4);
                     addEventToUI('Token Transfer', `Sent ${amount} CRST to ${toAddress}`, 'info');
                     // Refresh balance
                     loadBalances().then(() => updateBalanceDisplays());
@@ -699,7 +692,7 @@ function handleTokenEvent(event) {
 }
 
 
-/**
+/*
  * Add event to UI display
  * This adds a new event to the real-time events panel
  */
@@ -737,7 +730,7 @@ function addEventToUI(category, message, type = 'info') {
             break;
     }
     
-    // Create event element with improved styling
+    // Create event element
     const eventElement = document.createElement('div');
     eventElement.className = `border-start border-3 border-${type === 'success' ? 'success' : type === 'error' ? 'danger' : type === 'warning' ? 'warning' : 'info'} ps-3 pb-2 mb-3 ${bgClass} rounded p-2`;
     eventElement.innerHTML = `
@@ -753,10 +746,9 @@ function addEventToUI(category, message, type = 'info') {
         </div>
     `;
     
-    // Add to top of events container with smooth animation
     eventsContainer.insertBefore(eventElement, eventsContainer.firstChild);
     
-    // Add fade-in animation
+    // animation
     eventElement.style.opacity = '0';
     eventElement.style.transform = 'translateY(-10px)';
     setTimeout(() => {
@@ -768,12 +760,12 @@ function addEventToUI(category, message, type = 'info') {
 
 // 7. DATA LOADING FUNCTIONS
 
-/**
+/*
  * Initialize dashboard by loading all necessary data
  * This loads all the information displayed on the student dashboard
  */
 async function initializeDashboard() {
-    console.log('Loading student dashboard data...');
+    console.log('Loading student dashboard data.');
     
     try {
         // Load all data concurrently for better performance
@@ -799,7 +791,7 @@ async function initializeDashboard() {
     }
 }
 
-/**
+/*
  * Load wallet balances from blockchain
  * This gets CRST balance for display in the dashboard
  */
@@ -832,7 +824,7 @@ async function loadBalances() {
     }
 }
 
-/**
+/*
  * Load all available courses from smart contract
  * This gets all courses that students can register for
  */
@@ -881,7 +873,7 @@ async function loadCourses() {
     }
 }
 
-/**
+/*
  * Load student's registered courses from smart contract
  * This gets courses the student has registered for and their payment status
  */
@@ -950,7 +942,7 @@ async function loadRegisteredCourses() {
         }
     }
 }
-/**
+/*
  * Load student's token requests from smart contract
  * This gets all token requests made by the student
  */
@@ -1004,7 +996,7 @@ async function loadTokenRequests() {
 
 // 8. UI UPDATE & RENDERING FUNCTIONS
 
-/**
+/*
  * Update UI elements with user session data
  * This displays the wallet address in the navigation bar
  */
@@ -1012,13 +1004,13 @@ function updateUserUI() {
     const walletAddressElement = document.getElementById('wallet-address');
     if (walletAddressElement && userSession.walletAddress) {
         // Show shortened version of wallet address (first 6 and last 4 characters)
-        const shortAddress = `${userSession.walletAddress.slice(0, 6)}...${userSession.walletAddress.slice(-4)}`;
+        const shortAddress = `${userSession.walletAddress.slice(0, 6)}.${userSession.walletAddress.slice(-4)}`;
         walletAddressElement.textContent = shortAddress;
         walletAddressElement.title = userSession.walletAddress; // Full address on hover
     }
 }
 
-/**
+/*
  * Update blockchain connection status indicator
  * This shows whether we're connected to blockchain
  */
@@ -1029,7 +1021,7 @@ function updateBlockchainStatus(status) {
     }
 }
 
-/**
+/*
  * Update balance displays in the UI
  * This updates the balance cards with current CRST amounts
  */
@@ -1048,7 +1040,7 @@ function updateBalanceDisplays() {
     });
 }
 
-/**
+/*
  * Update wallet connection UI to show connected state
  * This hides connect button and shows wallet as connected
  */
@@ -1073,7 +1065,7 @@ function updateWalletConnectionUI() {
     }
 }
 
-/**
+/*
  * Render available courses table with registration and cart options
  * This creates the table rows showing all courses students can register for
  */
@@ -1117,7 +1109,7 @@ function renderCourses() {
                 <td>${course.id}</td>
                 <td>
                     <div class="fw-bold">${course.name}</div>
-                    <small class="text-muted">${course.description.substring(0, 50)}${course.description.length > 50 ? '...' : ''}</small>
+                    <small class="text-muted">${course.description.substring(0, 50)}${course.description.length > 50 ? '.' : ''}</small>
                 </td>
                 <td>${course.description}</td>
                 <td>${course.creditHours}</td>
@@ -1151,7 +1143,7 @@ function renderCourses() {
     });
 }
 
-/**
+/*
  * Render student's registered courses table with payment status
  * This shows all courses the student has registered for and their payment status
  */
@@ -1221,7 +1213,7 @@ function renderRegisteredCourses() {
     });
 }
 
-/**
+/*
  * Render shopping cart with courses and total
  * This displays all courses added to cart with remove options
  */
@@ -1282,7 +1274,7 @@ function renderCartCourses() {
     cartList.appendChild(totalSection);
 }
 
-/**
+/*
  * Update cart UI elements (badge counts, checkout button)
  * This updates cart-related UI elements when cart changes
  */
@@ -1303,7 +1295,7 @@ function updateCartUI() {
     renderCartCourses();
 }
 
-/**
+/*
  * Render student's token requests with status
  * This displays all token requests made by the student
  */
@@ -1368,7 +1360,7 @@ function renderTokenRequests() {
 
 // 9. EVENT LISTENER SETUP
 
-/**
+/*
  * Setup all event listeners for buttons and modals
  * This connects HTML buttons to JavaScript functions
  */
@@ -1377,6 +1369,18 @@ function setupEventListeners() {
     const submitTokenRequestBtn = document.getElementById('submit-token-request');
     if (submitTokenRequestBtn) {
         submitTokenRequestBtn.addEventListener('click', submitTokenRequest);
+    }
+    
+    // Token return submission
+    const confirmReturnTokensBtn = document.getElementById('confirm-return-tokens');
+    if (confirmReturnTokensBtn) {
+        confirmReturnTokensBtn.addEventListener('click', processTokenReturn);
+    }
+    
+    // Return tokens button
+    const returnTokensBtn = document.getElementById('return-tokens-btn');
+    if (returnTokensBtn) {
+        returnTokensBtn.addEventListener('click', showReturnTokensModal);
     }
     
     // Cart checkout
@@ -1402,9 +1406,15 @@ function setupEventListeners() {
     if (tokenAmountInput) {
         tokenAmountInput.addEventListener('input', updateTokenRequestCost);
     }
+    
+    // Return CRST amount input change for ETH calculation
+    const returnCrstAmountInput = document.getElementById('return-crst-amount');
+    if (returnCrstAmountInput) {
+        returnCrstAmountInput.addEventListener('input', updateReturnEstimate);
+    }
 }
 
-/**
+/*
  * Update token request cost display when amount changes
  * This calculates and shows the ETH cost for the requested tokens
  */
@@ -1419,9 +1429,40 @@ function updateTokenRequestCost() {
     }
 }
 
+/*
+ * Update return estimate when CRST amount changes
+ * This calculates and shows the ETH return amount after fees
+ */
+function updateReturnEstimate() {
+    const returnAmountInput = document.getElementById('return-crst-amount');
+    const ethGrossDisplay = document.getElementById('return-eth-gross');
+    const feeAmountDisplay = document.getElementById('return-fee-amount');
+    const netAmountDisplay = document.getElementById('return-net-amount');
+    const ethEstimateDisplay = document.getElementById('return-eth-estimate');
+    
+    if (returnAmountInput && ethGrossDisplay && feeAmountDisplay && netAmountDisplay && ethEstimateDisplay) {
+        const crstAmount = parseFloat(returnAmountInput.value) || 0;
+        const ethGross = crstAmount / parseFloat(contractConstants.exchangeRate);
+        const feePercent = parseFloat(contractConstants.returnFeePercent) / 10000; // Convert from basis points
+        const feeAmount = ethGross * feePercent;
+        const netAmount = ethGross - feeAmount;
+        
+        ethGrossDisplay.textContent = `${ethGross.toFixed(4)} ETH`;
+        feeAmountDisplay.textContent = `${feeAmount.toFixed(4)} ETH`;
+        netAmountDisplay.textContent = `${netAmount.toFixed(4)} ETH`;
+        ethEstimateDisplay.textContent = `${netAmount.toFixed(4)} ETH`;
+        
+        // Update button state based on user balance
+        const userBalance = parseFloat(balances.crst) || 0;
+        const confirmButton = document.getElementById('confirm-return-tokens');
+        if (confirmButton) {
+            confirmButton.disabled = crstAmount <= 0 || crstAmount > userBalance;
+        }
+    }
+}
 // 10. COURSE MANAGEMENT FUNCTIONS
 
-/**
+/*
  * Register for a single course
  * This registers the student for a course (no payment yet)
  */
@@ -1430,14 +1471,14 @@ async function registerForCourse(courseId) {
         showLoadingState(`register-btn-${courseId}`, true);
         
         if (courseRegistrationContract) {
-            console.log(`Registering for course ${courseId}...`);
+            console.log(`Registering for course ${courseId}.`);
             
             // Call contract function to register
             const tx = await testContractCall(async () => {
                 return await courseRegistrationContract.registerForCourse(parseInt(courseId));
             });
             
-            showMessage('Transaction sent! Waiting for confirmation...', 'info');
+            showMessage('Transaction sent! Waiting for confirmation.', 'info');
             
             // Wait for transaction confirmation
             const receipt = await tx.wait();
@@ -1478,7 +1519,7 @@ async function registerForCourse(courseId) {
     }
 }
 
-/**
+/*
  * Add course to shopping cart
  * This adds a course to the cart for batch payment later
  */
@@ -1532,7 +1573,7 @@ function addToCart(courseId) {
     
 }
 
-/**
+/*
  * Remove course from shopping cart
  * This removes a course from the cart
  */
@@ -1548,7 +1589,7 @@ function removeFromCart(courseId) {
 
 // 11. PAYMENT FUNCTIONS
 
-/**
+/*
  * Show individual course payment modal
  * This displays a payment modal for a single course fee
  */
@@ -1592,7 +1633,30 @@ function showPaymentModal(courseId) {
     modal.show();
 }
 
-/**
+/*
+ * Show return tokens modal with updated balance
+ * This displays the return modal with current user balance
+ */
+function showReturnTokensModal() {
+    // Update the balance display in the modal
+    const returnBalanceDisplay = document.getElementById('return-crst-balance');
+    if (returnBalanceDisplay) {
+        returnBalanceDisplay.textContent = `${balances.crst} CRST`;
+    }
+    
+    // Reset form and calculations
+    const returnAmountInput = document.getElementById('return-crst-amount');
+    if (returnAmountInput) {
+        returnAmountInput.value = '';
+        updateReturnEstimate(); // This will show 0 values
+    }
+    
+    // Show the modal
+    const modal = new bootstrap.Modal(document.getElementById('returnTokensModal'));
+    modal.show();
+}
+
+/*
  * Process individual course payment
  * This handles payment for a single course
  */
@@ -1612,7 +1676,7 @@ async function processIndividualPayment() {
         showLoadingState('confirm-payment', true);
         
         if (courseRegistrationContract && crstTokenContract) {
-            console.log(`Processing payment for course ${currentPaymentCourseId}...`);
+            console.log(`Processing payment for course ${currentPaymentCourseId}.`);
             
             const courseFeeWei = ethers.utils.parseEther(course.feeInTokens);
             
@@ -1624,26 +1688,26 @@ async function processIndividualPayment() {
             
             // If allowance is insufficient, request approval first
             if (currentAllowance.lt(courseFeeWei)) {
-                console.log('Requesting token approval...');
-                showMessage('Please approve the contract to spend your CRST tokens...', 'info');
+                console.log('Requesting token approval.');
+                showMessage('Please approve the contract to spend your CRST tokens.', 'info');
                 
                 const approveTx = await testContractCall(async () => {
                     return await crstTokenContract.approve(courseRegistrationContract.address, courseFeeWei);
                 });
                 
-                showMessage('Approval transaction sent! Waiting for confirmation...', 'info');
+                showMessage('Approval transaction sent! Waiting for confirmation.', 'info');
                 await approveTx.wait();
                 console.log('Token approval confirmed');
             }
             
             // Now process the payment
-            showMessage('Processing payment transaction...', 'info');
+            showMessage('Processing payment transaction.', 'info');
             
             const paymentTx = await testContractCall(async () => {
                 return await courseRegistrationContract.payFee(parseInt(currentPaymentCourseId));
             });
             
-            showMessage('Payment transaction sent! Waiting for confirmation...', 'info');
+            showMessage('Payment transaction sent! Waiting for confirmation.', 'info');
             
             const receipt = await paymentTx.wait();
             console.log('Payment successful:', receipt.transactionHash);
@@ -1689,7 +1753,7 @@ async function processIndividualPayment() {
     }
 }
 
-/**
+/*
  * Show cart payment modal
  * This displays a payment modal for all courses in cart
  */
@@ -1749,7 +1813,7 @@ function showCartPaymentModal() {
     modal.show();
 }
     
-/**
+/*
  * Process cart payment for multiple courses
  * This handles batch payment for all courses in cart
  */
@@ -1763,10 +1827,10 @@ async function processCartPayment() {
         showLoadingState('confirm-cart-payment', true);
         
         if (courseRegistrationContract && crstTokenContract) {
-            console.log(`Processing cart payment for ${cartCourses.length} courses...`);
+            console.log(`Processing cart payment for ${cartCourses.length} courses.`);
             
             // Remove duplicates from cart before processing
-            const uniqueCourseIds = [...new Set(cartCourses.map(c => c.id))];
+            const uniqueCourseIds = [new Set(cartCourses.map(c => c.id))];
             const uniqueCourses = uniqueCourseIds.map(id => cartCourses.find(c => c.id === id));
             
             console.log(`Processing ${uniqueCourses.length} unique courses after duplicate removal`);
@@ -1774,7 +1838,7 @@ async function processCartPayment() {
             // First, register for all unique courses in cart
             for (const course of uniqueCourses) {
                 try {
-                    console.log(`Checking registration status for course ${course.id}...`);
+                    console.log(`Checking registration status for course ${course.id}.`);
                     
                     // Check if already registered first
                     const isAlreadyRegistered = await testContractCall(async () => {
@@ -1784,12 +1848,12 @@ async function processCartPayment() {
                     });
                     
                     if (isAlreadyRegistered) {
-                        console.log(`Already registered for course ${course.id}, skipping registration...`);
+                        console.log(`Already registered for course ${course.id}, skipping registration.`);
                         continue;
                     }
                     
-                    console.log(`Registering for course ${course.id}...`);
-                    showMessage(`Registering for ${course.name}...`, 'info');
+                    console.log(`Registering for course ${course.id}.`);
+                    showMessage(`Registering for ${course.name}.`, 'info');
                     
                     const registerTx = await testContractCall(async () => {
                         return await courseRegistrationContract.registerForCourse(parseInt(course.id));
@@ -1800,7 +1864,7 @@ async function processCartPayment() {
                     
                 } catch (regError) {
                     if (regError.message.includes('Already registered')) {
-                        console.log(`Already registered for course ${course.id}, continuing...`);
+                        console.log(`Already registered for course ${course.id}, continuing.`);
                     } else if (regError.message.includes('Course is full')) {
                         throw new Error(`Course "${course.name}" is full and cannot be registered for`);
                     } else if (regError.message.includes('Invalid/inactive course')) {
@@ -1812,7 +1876,7 @@ async function processCartPayment() {
                 }
             }
             
-            // Calculate total fee needed (use unique courses)
+            // Calculate total fee needed 
             const courseIds = uniqueCourses.map(c => parseInt(c.id));
             let totalFeeWei = ethers.BigNumber.from(0);
             
@@ -1831,26 +1895,26 @@ async function processCartPayment() {
             
             // If allowance is insufficient, request approval
             if (currentAllowance.lt(totalFeeWei)) {
-                console.log('Requesting token approval for batch payment...');
-                showMessage('Please approve the contract to spend your CRST tokens for all courses...', 'info');
+                console.log('Requesting token approval for batch payment.');
+                showMessage('Please approve the contract to spend your CRST tokens for all courses.', 'info');
                 
                 const approveTx = await testContractCall(async () => {
                     return await crstTokenContract.approve(courseRegistrationContract.address, totalFeeWei);
                 });
                 
-                showMessage('Approval transaction sent! Waiting for confirmation...', 'info');
+                showMessage('Approval transaction sent! Waiting for confirmation.', 'info');
                 await approveTx.wait();
                 console.log('Token approval confirmed for batch payment');
             }
             
             // Process batch payment
-            showMessage('Processing batch payment transaction...', 'info');
+            showMessage('Processing batch payment transaction.', 'info');
             
             const paymentTx = await testContractCall(async () => {
                 return await courseRegistrationContract.payFeesForCourses(courseIds);
             });
             
-            showMessage('Batch payment transaction sent! Waiting for confirmation...', 'info');
+            showMessage('Batch payment transaction sent! Waiting for confirmation.', 'info');
             
             const receipt = await paymentTx.wait();
             console.log('Batch payment successful:', receipt.transactionHash);
@@ -1906,7 +1970,7 @@ async function processCartPayment() {
 }
 // 12. TOKEN REQUEST FUNCTIONS
 
-/**
+/*
  * Submit token request with ETH payment
  * This creates a new token request and pays ETH upfront
  */
@@ -1940,7 +2004,7 @@ async function submitTokenRequest() {
         showLoadingState('submit-token-request', true);
         
         if (courseRegistrationContract) {
-            console.log(`Requesting ${amount} CRST tokens...`);
+            console.log(`Requesting ${amount} CRST tokens.`);
             
             // Calculate required ETH
             const ethRequired = await testContractCall(async () => {
@@ -1959,7 +2023,7 @@ async function submitTokenRequest() {
                 throw new Error(`Insufficient ETH balance. Required: ${ethers.utils.formatEther(ethRequired)} ETH`);
             }
             
-            showMessage('Please confirm the transaction to request tokens...', 'info');
+            showMessage('Please confirm the transaction to request tokens.', 'info');
             
             // Submit token request with ETH payment
             const tx = await testContractCall(async () => {
@@ -1968,7 +2032,7 @@ async function submitTokenRequest() {
                 });
             });
             
-            showMessage('Token request submitted! Waiting for confirmation...', 'info');
+            showMessage('Token request submitted! Waiting for confirmation.', 'info');
             
             const receipt = await tx.wait();
             console.log('Token request submitted:', receipt.transactionHash);
@@ -2011,9 +2075,133 @@ async function submitTokenRequest() {
     }
 }
 
+/*
+ * Process token return for ETH with fee deduction
+ * This allows students to exchange CRST tokens back to ETH with 0.5% fee
+ */
+async function processTokenReturn() {
+    // Get form values
+    const crstAmount = document.getElementById('return-crst-amount').value;
+    
+    // Validation
+    if (!crstAmount || parseFloat(crstAmount) <= 0) {
+        showMessage("Please enter a valid CRST amount", 'error');
+        return;
+    }
+    
+    const userBalance = parseFloat(balances.crst);
+    const returnAmount = parseFloat(crstAmount);
+    
+    if (returnAmount > userBalance) {
+        showMessage("You don't have enough CRST tokens for this return", 'error');
+        return;
+    }
+    
+    // Calculate return amounts for confirmation
+    const ethGross = returnAmount / parseFloat(contractConstants.exchangeRate);
+    const feePercent = parseFloat(contractConstants.returnFeePercent) / 10000;
+    const feeAmount = ethGross * feePercent;
+    const netAmount = ethGross - feeAmount;
+    
+    if (netAmount <= 0) {
+        showMessage("Return amount too small - would result in zero ETH after fees", 'error');
+        return;
+    }
+    
+    try {
+        showLoadingState('confirm-return-tokens', true);
+        
+        if (courseRegistrationContract && crstTokenContract) {
+            console.log(`Processing return of ${crstAmount} CRST for ${netAmount.toFixed(4)} ETH.`);
+            
+            const crstAmountWei = ethers.utils.parseEther(crstAmount);
+            
+            // Check contract has enough ETH to return
+            const contractEthBalance = await testContractCall(async () => {
+                return await courseRegistrationContract.getContractEthBalance();
+            });
+            
+            const requiredEthWei = ethers.utils.parseEther(netAmount.toString());
+            
+            if (contractEthBalance.lt(requiredEthWei)) {
+                throw new Error('Contract has insufficient ETH balance for this return');
+            }
+            
+            // First, check current allowance
+            const currentAllowance = await testContractCall(async () => {
+                const walletAddress = await signer.getAddress();
+                return await crstTokenContract.allowance(walletAddress, courseRegistrationContract.address);
+            });
+            
+            // If allowance is insufficient, request approval first
+            if (currentAllowance.lt(crstAmountWei)) {
+                console.log('Requesting token approval for return.');
+                showMessage('Please approve the contract to spend your CRST tokens.', 'info');
+                
+                const approveTx = await testContractCall(async () => {
+                    return await crstTokenContract.approve(courseRegistrationContract.address, crstAmountWei);
+                });
+                
+                showMessage('Approval transaction sent! Waiting for confirmation.', 'info');
+                await approveTx.wait();
+                console.log('Token approval confirmed for return');
+            }
+            
+            // Now process the return
+            showMessage('Processing CRST return transaction.', 'info');
+            
+            const returnTx = await testContractCall(async () => {
+                return await courseRegistrationContract.returnCRSTForETH(crstAmountWei);
+            });
+            
+            showMessage('Return transaction sent! Waiting for confirmation.', 'info');
+            
+            const receipt = await returnTx.wait();
+            console.log('CRST return successful:', receipt.transactionHash);
+            
+            showMessage(`Successfully returned ${crstAmount} CRST for ${netAmount.toFixed(4)} ETH (${feeAmount.toFixed(4)} ETH fee deducted)`, 'success');
+            
+            // Refresh data to show updated balances
+            await loadBalances();
+            updateBalanceDisplays();
+            
+        } else {
+            throw new Error('Contracts not available');
+        }
+        
+        // Close modal and reset form
+        const modal = bootstrap.Modal.getInstance(document.getElementById('returnTokensModal'));
+        if (modal) modal.hide();
+        document.getElementById('return-tokens-form').reset();
+        
+    } catch (error) {
+        console.error('Token return failed:', error);
+        let errorMessage = error.message;
+        
+        // Handle specific contract errors
+        if (error.message.includes('MetaMask is temporarily overloaded')) {
+            errorMessage = 'MetaMask is temporarily overloaded. Please wait a moment and try again.';
+        } else if (error.code === 4001) {
+            errorMessage = 'Transaction cancelled by user';
+        } else if (error.message.includes('Insufficient CRST balance')) {
+            errorMessage = 'You don\'t have enough CRST tokens';
+        } else if (error.message.includes('Please approve contract')) {
+            errorMessage = 'Please approve the contract to spend your CRST tokens first';
+        } else if (error.message.includes('Insufficient contract ETH balance')) {
+            errorMessage = 'Contract has insufficient ETH for this return. Please try a smaller amount.';
+        } else if (error.message.includes('Amount must be greater than 0')) {
+            errorMessage = 'CRST amount must be greater than 0';
+        }
+        
+        showMessage('Token return failed: ' + errorMessage, 'error');
+    } finally {
+        showLoadingState('confirm-return-tokens', false);
+    }
+}
+
 // 13. PERIODIC REFRESH & UTILITY FUNCTIONS
 
-/**
+/*
  * Start periodic refresh of dashboard data
  * This refreshes critical data every 30 seconds to keep the dashboard current
  */
@@ -2037,7 +2225,7 @@ function startPeriodicRefresh() {
     }, 30000); // 30 seconds
 }
 
-/**
+/*
  * Stop periodic refresh when leaving page
  * This cleans up the refresh timer
  */
@@ -2048,13 +2236,13 @@ function stopPeriodicRefresh() {
     }
 }
 
-/**
+/*
  * Manual refresh function for refresh button
  * This reloads all dashboard data when user requests it
  */
 async function refreshAllData() {
     try {
-        showMessage('Refreshing all data...', 'info');
+        showMessage('Refreshing all data.', 'info');
         
         // Reload all dashboard data
         await Promise.all([
@@ -2083,13 +2271,13 @@ async function refreshAllData() {
     }
 }
 
-/**
+/*
  * Logout function - uses login.js logout system
  * This cleans up the session and redirects to login page
  */
 function logout() {
     try {
-        console.log('Student portal logout initiated...');
+        console.log('Student portal logout initiated.');
         
         // Stop periodic refresh
         stopPeriodicRefresh();
@@ -2124,7 +2312,7 @@ function logout() {
         removeStoredSession();
         sessionStorage.removeItem('studentRedirectCount');
         
-        console.log('Redirecting to login page...');
+        console.log('Redirecting to login page.');
         window.location.href = 'login.html';
         
     } catch (error) {
@@ -2135,7 +2323,7 @@ function logout() {
     }
 }
 
-/**
+/*
  * Utility function to show loading state on buttons
  * This provides visual feedback during blockchain transactions
  */
@@ -2148,7 +2336,7 @@ function showLoadingState(buttonId, loading) {
         // Store original text and show loading spinner
         const originalText = button.innerHTML;
         button.setAttribute('data-original-text', originalText);
-        button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Processing...';
+        button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Processing.';
     } else {
         button.disabled = false;
         // Restore original button text
@@ -2159,7 +2347,7 @@ function showLoadingState(buttonId, loading) {
     }
 }
 
-/**
+/*
  * Utility function to show toast messages
  * This displays temporary notifications to the user
  */
@@ -2195,7 +2383,7 @@ function showMessage(message, type = 'info') {
     }, 5000);
 }
 
-/**
+/*
  * Cleanup function for page unload
  * This ensures proper cleanup when user leaves the page
  */
@@ -2221,9 +2409,12 @@ window.showPaymentModal = showPaymentModal;
 window.showCartPaymentModal = showCartPaymentModal;
 window.processCartPayment = processCartPayment;
 window.submitTokenRequest = submitTokenRequest;
+window.processTokenReturn = processTokenReturn;
+window.showReturnTokensModal = showReturnTokensModal;
 window.refreshAllData = refreshAllData; 
 window.logout = logout;
 window.updateTokenRequestCost = updateTokenRequestCost;
+window.updateReturnEstimate = updateReturnEstimate;
 
 // Setup cleanup on page unload
 window.addEventListener('beforeunload', cleanup);

@@ -1390,79 +1390,6 @@ const CONTRACT_CONFIG = {
         {
                 "inputs": [
                         {
-                                "internalType": "uint256[]",
-                                "name": "courseIds",
-                                "type": "uint256[]"
-                        }
-                ],
-                "name": "calculateTotalFeesForCourses",
-                "outputs": [
-                        {
-                                "internalType": "uint256",
-                                "name": "totalFee",
-                                "type": "uint256"
-                        },
-                        {
-                                "internalType": "bool",
-                                "name": "allValid",
-                                "type": "bool"
-                        },
-                        {
-                                "internalType": "string",
-                                "name": "errorMessage",
-                                "type": "string"
-                        }
-                ],
-                "stateMutability": "view",
-                "type": "function"
-        },
-        {
-                "inputs": [
-                        {
-                                "internalType": "address",
-                                "name": "student",
-                                "type": "address"
-                        },
-                        {
-                                "internalType": "uint256[]",
-                                "name": "courseIds",
-                                "type": "uint256[]"
-                        }
-                ],
-                "name": "canStudentPayForCourses",
-                "outputs": [
-                        {
-                                "internalType": "bool",
-                                "name": "canPay",
-                                "type": "bool"
-                        },
-                        {
-                                "internalType": "string",
-                                "name": "reason",
-                                "type": "string"
-                        },
-                        {
-                                "internalType": "uint256",
-                                "name": "totalRequired",
-                                "type": "uint256"
-                        },
-                        {
-                                "internalType": "uint256",
-                                "name": "studentBalance",
-                                "type": "uint256"
-                        },
-                        {
-                                "internalType": "uint256",
-                                "name": "studentAllowance",
-                                "type": "uint256"
-                        }
-                ],
-                "stateMutability": "view",
-                "type": "function"
-        },
-        {
-                "inputs": [
-                        {
                                 "internalType": "uint256",
                                 "name": "",
                                 "type": "uint256"
@@ -1908,30 +1835,6 @@ const CONTRACT_CONFIG = {
                         {
                                 "internalType": "uint256[]",
                                 "name": "",
-                                "type": "uint256[]"
-                        }
-                ],
-                "stateMutability": "view",
-                "type": "function"
-        },
-        {
-                "inputs": [
-                        {
-                                "internalType": "address",
-                                "name": "student",
-                                "type": "address"
-                        }
-                ],
-                "name": "getStudentUnpaidCourses",
-                "outputs": [
-                        {
-                                "internalType": "uint256[]",
-                                "name": "unpaidCourseIds",
-                                "type": "uint256[]"
-                        },
-                        {
-                                "internalType": "uint256[]",
-                                "name": "fees",
                                 "type": "uint256[]"
                         }
                 ],

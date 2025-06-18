@@ -70,11 +70,14 @@
                             <button id="request-tokens-btn" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#requestTokensModal">
                                 <i class="fas fa-coins me-2"></i>Request Tokens
                             </button>
+                            <button id="return-tokens-btn" class="btn btn-warning">
+                                <i class="fas fa-exchange-alt me-2"></i>Return CRST for ETH
+                            </button>
                         </div>
                         <div class="mt-3">
                             <small class="text-muted">
                                 <i class="fas fa-info-circle me-1"></i>
-                                Tokens are automatically received when requests are approved
+                                Exchange rate: 1 ETH = 1000 CRST | Return fee: 0.5%
                             </small>
                         </div>
                     </div>
@@ -235,8 +238,7 @@
                         <div class="row mb-3">
                             <div class="col-md-6">
                                 <label for="token-amount" class="form-label">Token Amount (CRST)</label>
-                                <input type="number" class="form-control" id="token-amount" min="1" max="10000" value="100" required>
-                                <div class="form-text">1 - 10,000 CRST tokens</div>
+                                <input type="number" class="form-control" id="token-amount" min="1" max="10000" value="100" required onchange="updateTokenRequestCost()">                                <div class="form-text">1 - 10,000 CRST tokens</div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">ETH Cost</label>
@@ -292,6 +294,84 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="button" class="btn btn-success" id="confirm-payment">Pay Fee</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Return Tokens Modal -->
+    <div class="modal fade" id="returnTokensModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title">
+                        <i class="fas fa-exchange-alt me-2"></i>Return CRST for ETH
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="return-tokens-form">
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            <strong>Important:</strong> A 0.5% fee will be deducted from your ETH return. 
+                            This transaction requires approval to spend your CRST tokens.
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Your CRST Balance</label>
+                                <div class="form-control-plaintext fw-bold text-success" id="return-crst-balance">0 CRST</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Exchange Rate</label>
+                                <div class="form-control-plaintext fw-bold text-info">1000 CRST = 1 ETH</div>
+                            </div>
+                        </div>
+
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="return-crst-amount" class="form-label">CRST Amount to Return</label>
+                                <input type="number" class="form-control" id="return-crst-amount" min="1" step="1" placeholder="Enter CRST amount" required onchange="updateReturnEstimate()">
+                                <div class="form-text">Minimum: 1 CRST</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">ETH You'll Receive</label>
+                                <div class="form-control-plaintext fw-bold text-primary" id="return-eth-estimate">0.0000 ETH</div>
+                                <div class="form-text text-muted">After 0.5% fee deduction</div>
+                            </div>
+                        </div>
+
+                        <div class="card bg-light mb-3">
+                            <div class="card-body">
+                                <h6 class="card-title">Return Calculation</h6>
+                                <div class="row text-sm">
+                                    <div class="col-6">ETH Equivalent:</div>
+                                    <div class="col-6 text-end" id="return-eth-gross">0.0000 ETH</div>
+                                </div>
+                                <div class="row text-sm">
+                                    <div class="col-6">Fee (0.5%):</div>
+                                    <div class="col-6 text-end text-warning" id="return-fee-amount">0.0000 ETH</div>
+                                </div>
+                                <hr class="my-2">
+                                <div class="row fw-bold">
+                                    <div class="col-6">You Receive:</div>
+                                    <div class="col-6 text-end text-success" id="return-net-amount">0.0000 ETH</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <strong>Process:</strong> First you'll approve the contract to spend your CRST, 
+                            then the return transaction will transfer your tokens and send ETH to your wallet.
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-warning" id="confirm-return-tokens">
+                        <i class="fas fa-exchange-alt me-1"></i>Return CRST for ETH
+                    </button>
                 </div>
             </div>
         </div>

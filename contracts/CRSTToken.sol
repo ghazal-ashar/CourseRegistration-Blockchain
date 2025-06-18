@@ -5,15 +5,12 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
- * - Maximum supply: 25,000 CRST tokens
- * - Auto-burn functionality
- * - 1 ETH = 1000 CRST exchange rate
  *  Ghazal E Ashar & Shahzeb Ahmed Iqbal
  */
 
 contract CRSTToken is ERC20, Ownable {
     
-    // Maximum supply: 25,000 tokens (much simpler than 1M)
+    // Maximum supply: 25,000 tokens
     uint256 public constant MAX_SUPPLY = 25000 * 10**18;
     
     // Auto-burn threshold: if contract balance > 5000 CRST, burn excess

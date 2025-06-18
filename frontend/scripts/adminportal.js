@@ -124,6 +124,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeContracts().then(() => {
         initializeDashboard();      // Load all dashboard data
         setupEventListeners();      // Set up button clicks and modal events
+        setupEventMonitoring();     // Setup events monitoring
         startPeriodicRefresh();     // Start auto-refresh timer
         isInitialized = true;
         console.log('✅ Admin Portal v2.3 initialized successfully');
@@ -525,7 +526,355 @@ async function verifyContractAdminRights() {
     }
 }
 
-// 6. DATA LOADING FUNCTIONS
+// 6. REAL-TIME EVENT MONITORING
+
+/**
+ * Setup real-time event monitoring for blockchain events
+ * This listens for contract events and updates the UI automatically
+ */
+function setupEventMonitoring() {
+    if (!courseRegistrationContract) {
+        console.log('Contract not available for event monitoring');
+        return;
+    }
+    
+    try {        
+        // Listen to all events from the course registration contract
+        courseRegistrationContract.on("*", (event) => {
+            handleBlockchainEvent(event);
+        });
+        
+        // Also listen to token events
+        if (crstTokenContract) {
+            crstTokenContract.on("*", (event) => {
+                handleTokenEvent(event);
+            });
+        }
+        
+        console.log('✅ Real-time event monitoring setup complete for admin portal');
+        
+    } catch (error) {
+        console.error('Failed to setup event monitoring:', error);
+    }
+}
+
+/**
+ * Handle blockchain events from course registration contract
+ * Admin portal focuses on system-wide events
+ */
+function handleBlockchainEvent(event) {
+    try {
+        const eventName = event.event;
+        const args = event.args;
+        
+        console.log('Admin portal - Blockchain event received:', eventName, args);
+        
+        switch (eventName) {
+            case 'CourseAdded':
+                addEventToUI('Course Management', `New course added: "${args.name}" (ID: ${args.courseId}) - Fee: ${args.feeInTokens} CRST`, 'success');
+                // Refresh courses data
+                loadCourses().then(() => renderCourses());
+                break;
+                
+            case 'CourseUpdated':
+                addEventToUI('Course Management', `Course updated: "${args.name}" (ID: ${args.courseId}) - Fee: ${args.feeInTokens} CRST`, 'info');
+                // Refresh courses data
+                loadCourses().then(() => renderCourses());
+                break;
+                
+            case 'CourseActivated':
+                addEventToUI('Course Management', `Course ${args.courseId} activated`, 'success');
+                // Refresh courses data
+                loadCourses().then(() => renderCourses());
+                break;
+                
+            case 'CourseDeactivated':
+                addEventToUI('Course Management', `Course ${args.courseId} deactivated`, 'warning');
+                // Refresh courses data
+                loadCourses().then(() => renderCourses());
+                break;
+                
+            case 'StudentRegistered':
+                const studentAddr = args.student.slice(0, 8) + '...' + args.student.slice(-6);
+                addEventToUI('Student Activity', `Student ${studentAddr} registered for course ${args.courseId}`, 'info');
+                // Refresh system stats
+                loadSystemStats().then(() => updateSystemStats());
+                break;
+                
+            case 'FeesPaid':
+                const studentAddress = args.student.slice(0, 8) + '...' + args.student.slice(-6);
+                const amount = parseFloat(ethers.utils.formatEther(args.amount)).toFixed(2);
+                addEventToUI('Student Payments', `${studentAddress} paid ${amount} CRST for course ${args.courseId}`, 'success');
+                // Refresh system stats and balances
+                loadSystemStats().then(() => updateSystemStats());
+                break;
+                
+            case 'BatchFeePaid':
+                const batchStudentAddr = args.student.slice(0, 8) + '...' + args.student.slice(-6);
+                const totalAmount = parseFloat(ethers.utils.formatEther(args.totalAmount)).toFixed(2);
+                addEventToUI('Student Payments', `${batchStudentAddr} completed batch payment: ${args.courseIds.length} courses, ${totalAmount} CRST total`, 'success');
+                // Refresh system stats
+                loadSystemStats().then(() => updateSystemStats());
+                break;
+                
+            case 'TokenRequested':
+                const requesterAddr = args.student.slice(0, 8) + '...' + args.student.slice(-6);
+                const ethRequired = parseFloat(ethers.utils.formatEther(args.ethRequired)).toFixed(4);
+                addEventToUI('Token Requests', `${requesterAddr} requested ${args.amountInTokens} CRST (${ethRequired} ETH paid) - Request #${args.requestId}`, 'info');
+                // Refresh pending requests
+                loadPendingTokenRequests().then(() => renderPendingTokenRequests());
+                break;
+                
+            case 'TokenRequestApproved':
+                const approvedStudentAddr = args.student.slice(0, 8) + '...' + args.student.slice(-6);
+                const adminAddr = args.admin.slice(0, 8) + '...' + args.admin.slice(-6);
+                addEventToUI('Token Requests', `Request #${args.requestId} APPROVED: ${args.amountInTokens} CRST for ${approvedStudentAddr} by ${adminAddr}`, 'success');
+                // Refresh pending requests and system stats
+                loadPendingTokenRequests().then(() => renderPendingTokenRequests());
+                loadSystemStats().then(() => updateSystemStats());
+                break;
+                
+            case 'TokenRequestRejected':
+                const rejectedStudentAddr = args.student.slice(0, 8) + '...' + args.student.slice(-6);
+                const rejectingAdminAddr = args.admin.slice(0, 8) + '...' + args.admin.slice(-6);
+                addEventToUI('Token Requests', `Request #${args.requestId} REJECTED for ${rejectedStudentAddr} by ${rejectingAdminAddr}`, 'error');
+                // Refresh pending requests
+                loadPendingTokenRequests().then(() => renderPendingTokenRequests());
+                break;
+                
+            case 'TokenPurchaseCompleted':
+                const purchaseStudentAddr = args.student.slice(0, 8) + '...' + args.student.slice(-6);
+                const ethPaid = parseFloat(ethers.utils.formatEther(args.ethPaid)).toFixed(4);
+                addEventToUI('Token Purchases', `${purchaseStudentAddr} received ${args.amountInTokens} CRST tokens (${ethPaid} ETH) - Request #${args.requestId}`, 'success');
+                // Refresh system stats
+                loadSystemStats().then(() => updateSystemStats());
+                break;
+                
+            case 'CRSTReturned':
+                const returningStudentAddr = args.student.slice(0, 8) + '...' + args.student.slice(-6);
+                const crstAmount = parseFloat(ethers.utils.formatEther(args.crstAmount)).toFixed(2);
+                const ethReturned = parseFloat(ethers.utils.formatEther(args.ethReturned)).toFixed(4);
+                const feeDeducted = parseFloat(ethers.utils.formatEther(args.feeDeducted)).toFixed(4);
+                addEventToUI('CRST Returns', `${returningStudentAddr} returned ${crstAmount} CRST for ${ethReturned} ETH (${feeDeducted} ETH fee)`, 'warning');
+                // Refresh system stats
+                loadSystemStats().then(() => updateSystemStats());
+                break;
+                
+            case 'UserProfileCreated':
+                const newUserAddr = args.user.slice(0, 8) + '...' + args.user.slice(-6);
+                const roleText = args.role.toString() === '0' ? 'Student' : 'Admin';
+                addEventToUI('User Management', `New ${roleText} profile created: ${newUserAddr}`, 'success');
+                // Refresh system stats
+                loadSystemStats().then(() => updateSystemStats());
+                break;
+                
+            case 'AdminRequested':
+                const pendingAdminAddr = args.pendingAdmin.slice(0, 8) + '...' + args.pendingAdmin.slice(-6);
+                addEventToUI('Admin Requests', `Admin access requested by ${pendingAdminAddr}`, 'info');
+                // Refresh pending admin requests if you have that function
+                break;
+                
+            case 'AdminApproved':
+                const newAdminAddr = args.admin.slice(0, 8) + '...' + args.admin.slice(-6);
+                const approverAddr = args.approvedBy.slice(0, 8) + '...' + args.approvedBy.slice(-6);
+                addEventToUI('Admin Management', `Admin approved: ${newAdminAddr} by ${approverAddr}`, 'success');
+                break;
+                
+            case 'AdminRejected':
+                const rejectedAdminAddr = args.admin.slice(0, 8) + '...' + args.admin.slice(-6);
+                const rejectorAddr = args.rejectedBy.slice(0, 8) + '...' + args.rejectedBy.slice(-6);
+                addEventToUI('Admin Management', `Admin request rejected: ${rejectedAdminAddr} by ${rejectorAddr}`, 'error');
+                break;
+                
+            case 'EthWithdrawn':
+                const beneficiaryAddr = args.beneficiary.slice(0, 8) + '...' + args.beneficiary.slice(-6);
+                const withdrawnAmount = parseFloat(ethers.utils.formatEther(args.amount)).toFixed(4);
+                const tokensBurned = parseFloat(ethers.utils.formatEther(args.tokensBurned)).toFixed(2);
+                addEventToUI('Financial Operations', `${withdrawnAmount} ETH withdrawn to ${beneficiaryAddr} (${tokensBurned} CRST burned)`, 'warning');
+                // Refresh system stats
+                loadSystemStats().then(() => updateSystemStats());
+                break;
+                
+            case 'TokenFeesWithdrawn':
+                const tokenBeneficiaryAddr = args.beneficiary.slice(0, 8) + '...' + args.beneficiary.slice(-6);
+                const tokenAmount = parseFloat(ethers.utils.formatEther(args.amount)).toFixed(2);
+                addEventToUI('Financial Operations', `${tokenAmount} CRST tokens withdrawn to ${tokenBeneficiaryAddr}`, 'info');
+                // Refresh system stats
+                loadSystemStats().then(() => updateSystemStats());
+                break;
+                
+            case 'BeneficiaryUpdated':
+                const oldBeneficiary = args.oldBeneficiary.slice(0, 8) + '...' + args.oldBeneficiary.slice(-6);
+                const newBeneficiary = args.newBeneficiary.slice(0, 8) + '...' + args.newBeneficiary.slice(-6);
+                addEventToUI('System Updates', `Beneficiary updated from ${oldBeneficiary} to ${newBeneficiary}`, 'info');
+                break;
+                
+            case 'AutoBurnTriggered':
+                addEventToUI('Token Management', `Auto-burn triggered: ${args.reason}`, 'warning');
+                // Refresh system stats
+                loadSystemStats().then(() => updateSystemStats());
+                break;
+                
+            case 'UserDeactivated':
+                const deactivatedUserAddr = args.user.slice(0, 8) + '...' + args.user.slice(-6);
+                const deactivatorAddr = args.deactivatedBy.slice(0, 8) + '...' + args.deactivatedBy.slice(-6);
+                addEventToUI('User Management', `User deactivated: ${deactivatedUserAddr} by ${deactivatorAddr}`, 'error');
+                break;
+                
+            default:
+                // Log unknown events for debugging
+                console.log('Unknown event received:', eventName, args);
+                addEventToUI('System', `Unknown event: ${eventName}`, 'info');
+                break;
+        }
+        
+    } catch (error) {
+        console.error('Error handling blockchain event:', error);
+        addEventToUI('System Error', `Error processing event: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * Handle token contract events for ADMIN PORTAL
+ * This processes token-related events like transfers, minting, and burning
+ */
+function handleTokenEvent(event) {
+    try {
+        const eventName = event.event;
+        const args = event.args;
+        
+        console.log('Admin portal - Token event received:', eventName, args);
+        
+        switch (eventName) {
+            case 'Transfer':
+                const fromAddr = args.from === '0x0000000000000000000000000000000000000000' ? 
+                    'MINT' : args.from.slice(0, 8) + '...' + args.from.slice(-6);
+                const toAddr = args.to === '0x0000000000000000000000000000000000000000' ? 
+                    'BURN' : args.to.slice(0, 8) + '...' + args.to.slice(-6);
+                const transferAmount = parseFloat(ethers.utils.formatEther(args.value)).toFixed(2);
+                
+                if (args.from === '0x0000000000000000000000000000000000000000') {
+                    // Mint event
+                    addEventToUI('Token Operations', `${transferAmount} CRST minted to ${toAddr}`, 'success');
+                } else if (args.to === '0x0000000000000000000000000000000000000000') {
+                    // Burn event
+                    addEventToUI('Token Operations', `${transferAmount} CRST burned from ${fromAddr}`, 'warning');
+                } else {
+                    // Regular transfer
+                    addEventToUI('Token Transfers', `${transferAmount} CRST transferred from ${fromAddr} to ${toAddr}`, 'info');
+                }
+                
+                // Refresh system stats for all transfers
+                loadSystemStats().then(() => updateSystemStats());
+                break;
+                
+            case 'TokensMinted':
+                const mintToAddr = args.to.slice(0, 8) + '...' + args.to.slice(-6);
+                const mintAmount = parseFloat(ethers.utils.formatEther(args.amount)).toFixed(2);
+                addEventToUI('Token Minting', `${mintAmount} CRST minted to ${mintToAddr}`, 'success');
+                // Refresh system stats
+                loadSystemStats().then(() => updateSystemStats());
+                break;
+                
+            case 'TokensBurned':
+                const burnAmount = parseFloat(ethers.utils.formatEther(args.amount)).toFixed(2);
+                addEventToUI('Token Burning', `${burnAmount} CRST burned - Reason: ${args.reason}`, 'warning');
+                // Refresh system stats
+                loadSystemStats().then(() => updateSystemStats());
+                break;
+                
+            case 'AutoBurnTriggered':
+                const autoBurnAmount = parseFloat(ethers.utils.formatEther(args.burnedAmount)).toFixed(2);
+                const newBalance = parseFloat(ethers.utils.formatEther(args.newBalance)).toFixed(2);
+                addEventToUI('Auto-Burn', `${autoBurnAmount} CRST auto-burned (new balance: ${newBalance} CRST)`, 'warning');
+                // Refresh system stats
+                loadSystemStats().then(() => updateSystemStats());
+                break;
+                
+            default:
+                console.log('Unknown token event received:', eventName, args);
+                addEventToUI('Token System', `Unknown token event: ${eventName}`, 'info');
+                break;
+        }
+        
+    } catch (error) {
+        console.error('Error handling token event:', error);
+        addEventToUI('Token Error', `Error processing token event: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * Add event to UI display for ADMIN PORTAL
+ * This adds a new event to the real-time events panel with admin-specific styling
+ */
+function addEventToUI(category, message, type = 'info') {
+    const eventsContainer = document.getElementById('events-container');
+    if (!eventsContainer) {
+        console.warn('Events container not found');
+        return;
+    }
+    
+    const timestamp = new Date().toLocaleTimeString();
+    
+    // Determine icon and color based on event type
+    let icon = 'fa-info-circle';
+    let colorClass = 'text-info';
+    let bgClass = 'bg-light';
+    
+    switch (type) {
+        case 'success':
+            icon = 'fa-check-circle';
+            colorClass = 'text-success';
+            bgClass = 'bg-success bg-opacity-10';
+            break;
+        case 'error':
+            icon = 'fa-exclamation-circle';
+            colorClass = 'text-danger';
+            bgClass = 'bg-danger bg-opacity-10';
+            break;
+        case 'warning':
+            icon = 'fa-exclamation-triangle';
+            colorClass = 'text-warning';
+            bgClass = 'bg-warning bg-opacity-10';
+            break;
+        case 'info':
+        default:
+            icon = 'fa-info-circle';
+            colorClass = 'text-info';
+            bgClass = 'bg-info bg-opacity-10';
+            break;
+    }
+    
+    // Create event element with admin-specific styling
+    const eventElement = document.createElement('div');
+    eventElement.className = `border-start border-3 border-${type === 'success' ? 'success' : type === 'error' ? 'danger' : type === 'warning' ? 'warning' : 'info'} ps-3 pb-2 mb-3 ${bgClass} rounded p-2`;
+    eventElement.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start">
+            <div class="flex-grow-1">
+                <div class="d-flex align-items-center mb-1">
+                    <i class="fas ${icon} ${colorClass} me-2"></i>
+                    <strong class="${colorClass}">${category}</strong>
+                    <small class="text-muted ms-auto">${timestamp}</small>
+                </div>
+                <div class="small">${message}</div>
+            </div>
+        </div>
+    `;
+    
+    // Add to top of events container with smooth animation
+    eventsContainer.insertBefore(eventElement, eventsContainer.firstChild);
+    
+    // Add fade-in animation
+    eventElement.style.opacity = '0';
+    eventElement.style.transform = 'translateY(-10px)';
+    setTimeout(() => {
+        eventElement.style.transition = 'all 0.3s ease-in-out';
+        eventElement.style.opacity = '1';
+        eventElement.style.transform = 'translateY(0)';
+    }, 10);
+}
+
+// 7. DATA LOADING FUNCTIONS
 
 /**
  * Initialize dashboard by loading all necessary data
@@ -962,7 +1311,7 @@ async function loadPendingAdmins() {
     }
 }
 
-// 7. UI UPDATE & RENDERING FUNCTIONS
+// 8. UI UPDATE & RENDERING FUNCTIONS
 
 /**
  * Update UI elements with user session data
@@ -1317,7 +1666,7 @@ function renderPendingAdmins() {
     }
 }
 
-// 8. EVENT LISTENER SETUP
+// 9. EVENT LISTENER SETUP
 
 /**
  * Setup all event listeners for buttons and modals
@@ -1370,7 +1719,7 @@ function setupEventListeners() {
     });
 }
 
-// 9. MODAL FUNCTIONS
+// 10. MODAL FUNCTIONS
 
 /**
  * Show token request modal with detailed information
@@ -1469,7 +1818,7 @@ async function updateModalData(modalId) {
     }
 }
 
-// 10. COURSE MANAGEMENT FUNCTIONS
+// 11. COURSE MANAGEMENT FUNCTIONS
 
 /**
  * Add new course to the smart contract
@@ -1830,7 +2179,7 @@ async function activateCourse(courseId) {
     }
 }
 
-// 11. TOKEN REQUEST MANAGEMENT
+// 12. TOKEN REQUEST MANAGEMENT
 
 /**
  * Approve token request - transfers tokens immediately
@@ -1958,7 +2307,7 @@ async function rejectTokenRequest() {
     }
 }
 
-// 12. FINANCIAL OPERATIONS
+// 13. FINANCIAL OPERATIONS
 
 /**
  * Withdraw ETH from contract (burns equivalent CRST automatically)
@@ -2156,7 +2505,7 @@ async function setBeneficiary() {
     }
 }
 
-// 13. ADMIN REQUEST MANAGEMENT
+// 14. ADMIN REQUEST MANAGEMENT
 
 /**
  * Approve an admin access request
@@ -2271,7 +2620,7 @@ async function rejectAdminRequest(adminAddress) {
     }
 }
 
-// 14. PERIODIC REFRESH & UTILITY FUNCTIONS
+// 15. PERIODIC REFRESH & UTILITY FUNCTIONS
 
 /**
  * Start periodic refresh of dashboard data
@@ -2354,10 +2703,16 @@ async function refreshAllData() {
  */
 function logout() {
     try {
-        console.log('🚪 Admin portal logout initiated...');
-        
         // Stop periodic refresh
         stopPeriodicRefresh();
+        
+        // Stop event monitoring
+        if (courseRegistrationContract) {
+            courseRegistrationContract.removeAllListeners();
+        }
+        if (crstTokenContract) {
+            crstTokenContract.removeAllListeners();
+        }
         
         // Clear local contract data
         userSession = null;
@@ -2378,7 +2733,6 @@ function logout() {
         window.location.href = 'login.html';
         
     } catch (error) {
-        console.error('❌ Logout failed:', error);
         // Force redirect on logout failure
         removeStoredSession();
         window.location.href = 'login.html';
@@ -2451,9 +2805,17 @@ function showMessage(message, type = 'info') {
  */
 function cleanup() {
     stopPeriodicRefresh();
+    
+    // Stop event monitoring
+    if (courseRegistrationContract) {
+        courseRegistrationContract.removeAllListeners();
+    }
+    if (crstTokenContract) {
+        crstTokenContract.removeAllListeners();
+    }
 }
 
-// 15. GLOBAL EXPORTS & EVENT SETUP
+// 16. GLOBAL EXPORTS & EVENT SETUP
 
 // Export functions for HTML onclick handlers
 window.viewCourseDetails = viewCourseDetails;
